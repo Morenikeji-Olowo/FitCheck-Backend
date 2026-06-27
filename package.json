@@ -1,0 +1,32 @@
+{
+  "name": "fitcheckbackend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+"scripts": {
+  "start": "node index.js",
+  "dev": "nodemon index.js"
+},
+"type": "module",
+
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Morenikeji-Olowo/FitCheck-Backend.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Morenikeji-Olowo/FitCheck-Backend/issues"
+  },
+  "homepage": "https://github.com/Morenikeji-Olowo/FitCheck-Backend#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.108.1",
+    "@upstash/redis": "^1.38.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
+    "nodemon": "^3.1.14"
+  }
+}
