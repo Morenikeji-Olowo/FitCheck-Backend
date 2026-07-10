@@ -1,12 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 
-const superBaseUrl = process.env.SUPABASE_URL;
-const superBaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+const supaBaseUrl = process.env.SUPABASE_URL;
+const supaBaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
 
-if(!superBaseUrl || !superBaseServiceKey) {
+if(!supaBaseUrl || !supaBaseServiceKey) {
     throw new Error("Supabase URL and Service Key must be provided in environment variables.");
 }
 
-const superbase = createClient(superBaseUrl, superBaseServiceKey);
+const supabase = createClient(supaBaseUrl, supaBaseServiceKey);
 
-export default superbase;
+export default supabase;
