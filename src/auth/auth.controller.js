@@ -129,9 +129,36 @@ export const deleteAccount = async (req, res) => {
   }
 }
 
+export const googleLogin = async (req, res) => {
+    try{
+        const { idToken } = req.body
+
+        if(!idToken){
+            return res.status(400).json({ error: 'Google token is required' })
+        }
+        const result = await authService.googleLogin(idToken)
+
+        res.json({
+        message: result.isNewUser ? 'Account created successfully' : 'Login successful',
+        user: {
+            id: result.user.id,
+            email: result.user.email,
+            full_name: result.user.user_metadata.full_name
+        },
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+        isNewUser: result.isNewUser
+        })
+    }
+    catch(error){
+        res.status(400).json({ error: error.message })
+    }
+}
+
 const authController = {
     signUp,
     login,
+    googleLogin,
     refresh,
     forgotPassword,
     resetPassword,
