@@ -28,6 +28,12 @@ class Settings:
         self.ENV = os.getenv("ENV", "development")
         self.MAX_IMAGE_SIZE_MB = int(os.getenv("MAX_IMAGE_SIZE_MB", 10))
         
+        # Image validation
+        self.MAX_IMAGE_SIZE_MB = int(os.getenv("MAX_IMAGE_SIZE_MB", 10))
+        self.MIN_IMAGE_DIMENSION = int(os.getenv("MIN_IMAGE_DIMENSION", 300))
+        self.MAX_IMAGE_DIMENSION = int(os.getenv("MAX_IMAGE_DIMENSION", 6000))
+        self.BLUR_THRESHOLD = float(os.getenv("BLUR_THRESHOLD", 80.0))
+        
         required = {
             "OPENAI_API_KEY": self.OPENAI_API_KEY,
             "AWS_BUCKET_NAME": self.AWS_BUCKET_NAME,
