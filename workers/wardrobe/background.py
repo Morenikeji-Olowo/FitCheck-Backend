@@ -114,4 +114,4 @@ def remove_background(image_bytes: bytes) -> bytes:
 
     logger.error("remove.bg failed after all retries")
 
-    raise last_exc 
+    raise last_exc

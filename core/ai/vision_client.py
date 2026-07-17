@@ -97,7 +97,7 @@ class VisionClient:
         content_type: str = "image/png"
     ) -> dict:
         """Analyze user photo — returns body profile data"""
-        from core.prompts.avatar import AVATAR_ANALYSIS_PROMPT
+        from core.prompts.avatar_prompts import AVATAR_ANALYSIS_PROMPT
         logger.info("Starting avatar analysis")
         return self._call_vision(image_bytes, AVATAR_ANALYSIS_PROMPT, content_type)
 
@@ -107,7 +107,7 @@ class VisionClient:
         content_type: str = "image/png"
     ) -> dict:
         """Classify clothing item — returns metadata"""
-        from core.prompts.wardrobe import WARDROBE_CLASSIFICATION_PROMPT
+        from core.prompts.wardrobe_prompts import WARDROBE_CLASSIFICATION_PROMPT
         logger.info("Starting clothing classification")
         return self._call_vision(image_bytes, WARDROBE_CLASSIFICATION_PROMPT, content_type)
 
@@ -117,7 +117,7 @@ class VisionClient:
         content_type: str = "image/png"
     ) -> dict:
         """Score outfit combination — returns confidence and explanation"""
-        from core.prompts.outfit import OUTFIT_SCORING_PROMPT
+        from core.prompts.outfit_prompts import OUTFIT_SCORING_PROMPT
         logger.info("Starting outfit scoring")
         return self._call_vision(image_bytes, OUTFIT_SCORING_PROMPT, content_type)
 

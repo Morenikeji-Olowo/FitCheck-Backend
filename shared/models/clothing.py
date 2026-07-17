@@ -36,3 +36,18 @@ class ClothingItem(BaseModel):
 
     class Config:
         json_encoders = { uuid.UUID: str }
+
+class ClothingClassification(BaseModel):
+    category: Category
+    item_type: str
+    colors: list[str]
+    dominant_color: str
+    secondary_color: str | None = None
+    pattern: Pattern
+    style: Style
+    seasons: list[Season]
+    occasions: list[Occasion]
+    brand: str | None = None
+    pairs_well_with: list[str] = []
+    material: str | None = None
+    classification_confidence: float = Field(ge=0, le=1)
