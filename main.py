@@ -5,6 +5,8 @@ from api.wardrobe import router as wardrobe_router
 from shared.exceptions import FitCheckException
 from core.config.settings import settings
 from api.avatar import router as avatar_router
+from api.style_profile import router as style_profile_router
+
 
 app = FastAPI(title="FitCheck AI Service")
 
@@ -44,6 +46,7 @@ app.add_middleware(
 
 app.include_router(wardrobe_router, prefix="/api")
 app.include_router(avatar_router, prefix="/api")
+app.include_router(style_profile_router, prefix="/api")
 
 
 @app.get("/")

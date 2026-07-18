@@ -1,0 +1,104 @@
+from fastapi import APIRouter, Query
+from uuid import UUID
+from shared.logger import get_logger
+from shared.models.responses import SuccessResponse
+from shared.models.style_profile import StyleProfile, UpdateStyleProfileRequest
+from shared.exceptions import FitCheckException
+from core.storage.supabase_client import supabase
+
+logger = get_logger(__name__)
+
+router = APIRouter(prefix="/style-profile", tags=["Style Profile"])
+
+
+@router.get("/health")
+async def health():
+    return { "service": "style-profile", "version": "1.0.0", "status": "healthy" }
+
+
+@router.post("/create", response_model=SuccessResponse[StyleProfile])
+async def create_style_profile(profile: StyleProfile):
+    """
+    Create or replace style profile — called after onboarding quiz.
+    Upsert — one profile per user always.
+    """
+    logger.info(f"Create style profile — user={profile.user_id}")
+
+    data = {
+        "user_id": str(profile.user_id),
+        "styles": profile.styles,
+        "preferred_colors": profile.preferred_colors,
+        "disliked_colors": profile.disliked_colors,
+        "favorite_occasions": profile.favorite_occasions,
+        "onboarding_completed": True
+    }
+
+    result = supabase.table("style_profiles")\
+        .upsert(data, on_conflict="user_id")\
+        .execute()
+
+    if not result.data:
+        raise FitCheckException(
+            "Failed to save style profile.",
+            code="DATABASE_ERROR",
+            status_code=500
+        )
+
+    logger.info(f"Style profile saved — user={profile.user_id}")
+    return SuccessResponse(data=result.data[0])
+
+
+@router.get("/me", response_model=SuccessResponse)
+async def get_my_style_profile(user_id: UUID = Query(...)):
+    """Get current user's style profile"""
+    logger.info(f"Get style profile — user={user_id}")
+
+    result = supabase.table("style_profiles")\
+        .select("*")\
+        .eq("user_id", str(user_id))\
+        .single()\
+        .execute()
+
+    if not result.data:
+        return SuccessResponse(data={
+            "user_id": str(user_id),
+            "styles": [],
+            "preferred_colors": [],
+            "disliked_colors": [],
+            "favorite_occasions": [],
+            "onboarding_completed": False
+        })
+
+    return SuccessResponse(data=result.data)
+
+
+@router.put("/me", response_model=SuccessResponse)
+async def update_style_profile(
+    body: UpdateStyleProfileRequest,
+    user_id: UUID = Query(...)
+):
+    """Edit style profile — partial update"""
+    updates = body.model_dump(exclude_none=True, exclude_unset=True)
+
+    logger.info(
+        "Update style profile — user=%s fields=%s",
+        user_id,
+        list(updates.keys())
+    )
+
+    if not updates:
+        return SuccessResponse(data={"message": "Nothing to update"})
+
+    result = supabase.table("style_profiles")\
+        .update(updates)\
+        .eq("user_id", str(user_id))\
+        .execute()
+
+    if not result.data:
+        raise FitCheckException(
+            "Style profile not found. Please complete onboarding first.",
+            code="STYLE_PROFILE_NOT_FOUND",
+            status_code=404
+        )
+
+    return SuccessResponse(data=result.data[0])
