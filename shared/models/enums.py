@@ -81,3 +81,17 @@ class WaistDefinition(str, Enum):
     DEFINED = "defined"
     AVERAGE = "average"
     UNDEFINED = "undefined"
+    
+class BodyOrientation(str, Enum):
+    FRONT = "front"
+    FRONT_LEFT = "front_left"
+    FRONT_RIGHT = "front_right"
+    SIDE_LEFT = "side_left"
+    SIDE_RIGHT = "side_right"
+    BACK = "back"
+
+class Pose(str, Enum):
+    STANDING = "standing"
+    WALKING = "walking"
+    SITTING = "sitting"
+    OTHER = "other"

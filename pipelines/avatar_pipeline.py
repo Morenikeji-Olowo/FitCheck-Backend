@@ -56,7 +56,9 @@ async def run_avatar_pipeline(
         logger.info("Step 3/7 — Image enhanced")
 
         # 6. Analyze body BEFORE uploading — avoid S3 cost if GPT fails
-        body_profile, body_profile_ai = analyze_body(enhanced_bytes, "image/png")
+        body_profile, body_profile_ai, orientation, accuracy = analyze_body(enhanced_bytes, "image/png")
+        body_profile_ai["detected_orientation"] = orientation
+        body_profile_ai["photo_accuracy"] = accuracy
         logger.info("Step 4/7 — Body analysis complete")
 
         # 7. Upload original to S3

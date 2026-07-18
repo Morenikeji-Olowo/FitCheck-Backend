@@ -3,6 +3,7 @@ from core.config.settings import settings
 from shared.logger import get_logger
 from shared.exceptions import AIAnalysisError
 from shared.models.body import BodyProfile
+from shared.models.enums import BodyOrientation, Pose
 from shared.models.enums import (
     BodyShape, SkinTone, HeightCategory,
     Build, ShoulderWidth, WaistDefinition
@@ -21,7 +22,7 @@ VALID_VISIBILITY = {"full", "partial"}
 def analyze_body(
     image_bytes: bytes,
     content_type: str = "image/png"
-) -> tuple[BodyProfile, dict]:
+) -> tuple[BodyProfile, dict, str, str]:
     """
     Sends user photo to GPT-4o Vision.
     Returns validated BodyProfile + raw AI result.
@@ -70,6 +71,30 @@ def analyze_body(
                 "Partial body detected — avatar accuracy may be reduced"
             )
 
+
+        # Validate orientation
+        raw_orientation = raw.get("body_orientation", "front")
+        orientation = _parse_enum(BodyOrientation, raw_orientation, BodyOrientation.FRONT)
+
+        raw_pose = raw.get("pose", "standing")
+        pose = _parse_enum(Pose, raw_pose, Pose.STANDING)
+
+        # Reject back-facing or bad poses
+        if orientation == BodyOrientation.BACK or pose in (Pose.SITTING, Pose.OTHER):
+            logger.warning(f"Rejected photo — orientation={orientation.value} pose={pose.value}")
+            raise AIAnalysisError(
+                "Please upload a standing photo facing the camera for best results."
+            )
+
+        accuracy_map = {
+            BodyOrientation.FRONT: "excellent",
+            BodyOrientation.FRONT_LEFT: "good",
+            BodyOrientation.FRONT_RIGHT: "good",
+            BodyOrientation.SIDE_LEFT: "fair",
+            BodyOrientation.SIDE_RIGHT: "fair",
+        }
+        accuracy = accuracy_map.get(orientation, "fair")
+        logger.info(f"Photo orientation: {orientation.value} ({accuracy})")
         # 4. Build BodyProfile
         profile = BodyProfile(
             body_shape=_parse_enum(
@@ -101,11 +126,11 @@ def analyze_body(
             confidence
         )
 
-        return profile, raw
+        return profile, raw, orientation.value, accuracy
 
     except AIAnalysisError:
         raise
-    except Exception as e:
+    except Exception:
         logger.exception("Body analysis failed")
         raise AIAnalysisError()
 
