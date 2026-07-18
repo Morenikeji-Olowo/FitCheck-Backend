@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from api.wardrobe import router as wardrobe_router
 from shared.exceptions import FitCheckException
 from core.config.settings import settings
+from api.avatar import router as avatar_router
 
 app = FastAPI(title="FitCheck AI Service")
 
@@ -42,6 +43,8 @@ app.add_middleware(
 )
 
 app.include_router(wardrobe_router, prefix="/api")
+app.include_router(avatar_router, prefix="/api")
+
 
 @app.get("/")
 def health_check():

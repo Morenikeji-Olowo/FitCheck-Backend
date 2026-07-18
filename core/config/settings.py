@@ -44,7 +44,11 @@ class Settings:
         self.SHARPNESS_FACTOR = float(os.getenv("SHARPNESS_FACTOR", 1.3))
         self.MAX_IMAGE_SIZE = int(os.getenv("MAX_IMAGE_SIZE", 1600))
         
+        #freemieum
         self.FREE_TIER_LIMIT = int(os.getenv("FREE_TIER_LIMIT", 30))
+        
+        #avater
+        self.MIN_BODY_CONFIDENCE = float(os.getenv("MIN_BODY_CONFIDENCE", 0.4))
         
         required = {
         "OPENAI_API_KEY": self.OPENAI_API_KEY,
