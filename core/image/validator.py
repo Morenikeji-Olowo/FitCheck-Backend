@@ -9,10 +9,15 @@ from shared.exceptions import (
     InvalidImageFormatError,
     BlurryImageError
 )
+from core.storage.supabase_client import supabase
+from shared.exceptions import FreeTierLimitError
+from core.config.settings import settings
 
 logger = get_logger(__name__)
 
 ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"]
+UNLIMITED_TIERS = {"premium", "pro", "enterprise"}
+
 
 def validate_image(image_bytes: bytes, content_type: str) -> Image.Image:
     """
@@ -100,3 +105,45 @@ def _check_blur(image_bytes: bytes) -> None:
     except Exception as e:
         # Never block upload if blur detection fails
         logger.warning(f"Blur detection skipped: {e}")
+    
+    
+def check_free_tier_limit(user_id: str) -> None:
+    """
+    Checks if free user has hit the item limit.
+    Runs before any AI processing — saves credits.
+    """
+    try:
+        profile = supabase.table("profiles")\
+            .select("tier")\
+            .eq("id", user_id)\
+            .single()\
+            .execute()
+
+        if not profile.data:
+            return
+
+        tier = profile.data.get("tier", "free")
+
+        if tier in UNLIMITED_TIERS:
+            return
+
+        result = supabase.table("closet_items")\
+            .select("item_id", count="exact")\
+            .eq("user_id", user_id)\
+            .eq("is_archived", False)\
+            .execute()
+
+        count = result.count or 0
+
+        if count >= settings.FREE_TIER_LIMIT:
+            raise FreeTierLimitError(
+                f"You've reached your free limit of "
+                f"{settings.FREE_TIER_LIMIT} wardrobe items. "
+                f"Upgrade to Premium for unlimited storage."
+            )
+
+    except FreeTierLimitError:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to check free tier limit: {e}")
+        raise

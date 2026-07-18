@@ -1,7 +1,7 @@
 from fastapi import UploadFile
 from shared.logger import get_logger
 from shared.models.clothing import ClothingItem
-from core.image.validator import validate_image
+from core.image.validator import validate_image, check_free_tier_limit
 from core.image.enhancer import enhance_image
 from core.storage.s3 import storage, S3Folders
 from workers.wardrobe.background import remove_background
@@ -31,6 +31,10 @@ async def run_wardrobe_pipeline(
 
     try:
         logger.info(f"Wardrobe pipeline started — user: {user_id}")
+        
+        # 0. Free tier check — before any expensive operations
+        check_free_tier_limit(user_id)
+        logger.info("Step 0/7 — Free tier check passed")
 
         # 1. Read image bytes
         image_bytes = await file.read()

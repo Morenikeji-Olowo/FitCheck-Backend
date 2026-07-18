@@ -44,6 +44,8 @@ class Settings:
         self.SHARPNESS_FACTOR = float(os.getenv("SHARPNESS_FACTOR", 1.3))
         self.MAX_IMAGE_SIZE = int(os.getenv("MAX_IMAGE_SIZE", 1600))
         
+        self.FREE_TIER_LIMIT = int(os.getenv("FREE_TIER_LIMIT", 30))
+        
         required = {
         "OPENAI_API_KEY": self.OPENAI_API_KEY,
         "AWS_BUCKET_NAME": self.AWS_BUCKET_NAME,
