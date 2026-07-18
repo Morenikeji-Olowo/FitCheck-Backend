@@ -21,7 +21,9 @@ Return this exact JSON schema:
   "shoulder_width": "narrow|average|broad",
   "waist_definition": "defined|average|undefined",
   "build": "slim|athletic|average|full",
+  "body_orientation": "front|front_left|front_right|side_left|side_right|back",
   "body_visibility": "full|partial",
+  "pose": "standing|walking|sitting|other",
   "confidence": 0.0
 }
 """
