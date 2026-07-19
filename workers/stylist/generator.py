@@ -2,11 +2,10 @@ from shared.logger import get_logger
 from workers.outfit.compatibility import calculate_compatibility
 from workers.outfit.validator import validate_outfit_composition
 from shared.exceptions import FitCheckException
+import random
+
 
 logger = get_logger(__name__)
-
-SINGLE_ITEM_CATEGORIES = {"top", "bottom", "shoes", "dress", "outerwear"}
-REQUIRED_FOR_OUTFIT = ["bottom", "shoes"]  # what a top-based outfit needs beyond a top
 
 MOOD_STYLE_PRIORITY = {
     "confident": ["streetwear", "formal"],
@@ -25,20 +24,12 @@ def generate_outfits(
     weather: dict | None = None,
     excluded_item_ids: list[str] | None = None,
     max_results: int = 3
-) -> dict:
+) -> list[dict]:
     """
     Generates and ranks candidate outfits from a user's wardrobe.
-    Pure logic — no AI call. Never raises for "not enough items" —
-    that's a normal state, not an error. Returns a structured result
-    the caller can turn into whatever HTTP/UX response makes sense.
-
-    Returns:
-    {
-        "success": bool,
-        "outfits": [...],           # empty if insufficient wardrobe
-        "reason": str | None,       # "insufficient_wardrobe" if applicable
-        "missing_categories": [...] # what's needed to unlock generation
-    }
+    Assumes caller has already confirmed wardrobe viability via
+    analyze_wardrobe() in wardrobe_validator.py. Pure logic —
+    no AI call, no database access.
     """
     excluded = set(excluded_item_ids or [])
     logger.info(
@@ -59,19 +50,6 @@ def generate_outfits(
         pool = _prioritize_by_mood(pool, mood)
 
     by_category = _group_by_category(pool)
-
-    missing = _find_missing_categories(by_category)
-    if missing:
-        logger.warning(
-            "Insufficient wardrobe for generation — missing=%s", missing
-        )
-        return {
-            "success": False,
-            "outfits": [],
-            "reason": "insufficient_wardrobe",
-            "missing_categories": missing
-        }
-
     by_category = _prune_categories(by_category)
     candidates = _build_candidates(by_category)
 
@@ -80,7 +58,7 @@ def generate_outfits(
         try:
             validate_outfit_composition(candidate_items)
         except FitCheckException:
-            continue  # skip invalid combos, validator stays strict
+            continue
 
         scores = calculate_compatibility(candidate_items)
         scored.append({
@@ -97,53 +75,20 @@ def generate_outfits(
     top_results = scored[:max_results]
 
     if not top_results:
-        # Composition possible in theory, but nothing survived validation
-        # (e.g. bad data). Same clean non-error response.
         logger.warning("No valid outfit candidates survived scoring")
-        return {
-            "success": False,
-            "outfits": [],
-            "reason": "no_valid_combination",
-            "missing_categories": []
-        }
+        raise FitCheckException(
+            "We couldn't put together an outfit for this occasion right now. "
+            "Try a different occasion or mood.",
+            code="NO_VALID_COMBINATION", status_code=400
+        )
 
     logger.info(
         "Generated %d candidates, returning top %d — best score=%s",
         len(scored), len(top_results), top_results[0]["score"]
     )
 
-    return {
-        "success": True,
-        "outfits": top_results,
-        "reason": None,
-        "missing_categories": []
-    }
+    return top_results
 
-
-def _find_missing_categories(by_category: dict[str, list[dict]]) -> list[str]:
-    """
-    Determines what's missing to build ANY valid outfit.
-    Validator requires MIN_ITEMS=2 unconditionally, so a dress alone
-    is NOT enough — it needs a second item (shoes) to meet that bar.
-    """
-    has_dress = bool(by_category.get("dress"))
-    has_top = bool(by_category.get("top"))
-    has_bottom = bool(by_category.get("bottom"))
-    has_shoes = bool(by_category.get("shoes"))
-
-    if has_dress:
-        return [] if has_shoes else ["shoes"]
-
-    missing = []
-    if not has_top:
-        missing.append("top")
-    if not has_bottom:
-        missing.append("bottom")
-
-    if not missing and not has_shoes:
-        missing.append("shoes")
-
-    return missing
 
 def _group_by_category(items: list[dict]) -> dict[str, list[dict]]:
     grouped: dict[str, list[dict]] = {}
@@ -154,18 +99,31 @@ def _group_by_category(items: list[dict]) -> dict[str, list[dict]]:
 
 
 def _prune_categories(by_category: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    """
+    Caps items per category before combining. Favorites come first,
+    then prefer less-recently-worn items so recommendations rotate
+    instead of always surfacing the same pieces. Small shuffle within
+    equal-priority groups avoids identical daily outfits.
+    """
     pruned = {}
     for cat, items in by_category.items():
+        shuffled = items[:]
+        random.shuffle(shuffled)  # break ties randomly before sorting
         sorted_items = sorted(
-            items,
-            key=lambda i: (i.get("favorite", False), i.get("times_worn", 0)),
-            reverse=True
+            shuffled,
+            key=lambda i: (
+                not i.get("favorite", False),   # favorites first (False sorts before True)
+                i.get("times_worn", 0)          # ascending — less-worn items surface more
+            )
         )
         pruned[cat] = sorted_items[:MAX_ITEMS_PER_CATEGORY]
     return pruned
 
 
 def _build_candidates(by_category: dict[str, list[dict]]) -> list[list[dict]]:
+    # TODO Phase 6.2 — add accessories (bags, jewellery, headwear, 
+    # belts) layered onto base outfit after generation, once 
+    # include_accessories flag exists per backlog entry
     from itertools import product
     candidates = []
     shoes = by_category.get("shoes") or [None]
@@ -173,7 +131,7 @@ def _build_candidates(by_category: dict[str, list[dict]]) -> list[list[dict]]:
     if by_category.get("dress"):
         for dress, shoe in product(by_category["dress"], shoes):
             combo = [dress] + ([shoe] if shoe else [])
-            candidates.append(combo)  # no length filter — validator handles it
+            candidates.append(combo)
 
     if by_category.get("top") and by_category.get("bottom"):
         for top, bottom, shoe in product(
@@ -202,11 +160,18 @@ def _filter_by_weather(items: list[dict], weather: dict) -> list[dict]:
 
 
 def _prioritize_by_mood(items: list[dict], mood: str) -> list[dict]:
+    """
+    Mood biases ordering so preferred-style items are considered
+    first when pruning/building candidates — never discards items,
+    just reshuffles priority.
+    """
     preferred_styles = MOOD_STYLE_PRIORITY.get(mood.lower())
     if not preferred_styles:
         return items
-    matched = [item for item in items if item.get("style") in preferred_styles]
-    return matched if len(matched) >= 4 else items
+
+    preferred = [item for item in items if item.get("style") in preferred_styles]
+    others = [item for item in items if item.get("style") not in preferred_styles]
+    return preferred + others
 
 
 def _build_reason(scores: dict, mood: str | None) -> str:

@@ -22,6 +22,10 @@ class Settings:
         # External APIs
         self.REMOVE_BG_API_KEY = os.getenv("REMOVE_BG_API_KEY")
         
+        self.OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+        self.OPENWEATHER_BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
+        self.WEATHER_TIMEOUT = int(os.getenv("WEATHER_TIMEOUT", 5))
+
          # Storage folders
         self.S3_AVATAR_FOLDER = os.getenv("S3_AVATAR_FOLDER", "avatars")
         self.S3_WARDROBE_FOLDER = os.getenv("S3_WARDROBE_FOLDER", "wardrobe")
