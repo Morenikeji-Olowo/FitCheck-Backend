@@ -30,7 +30,7 @@ def classify_clothing(
 
         raw = vision_client.classify_clothing(image_bytes, content_type)
 
-        required = ["category", "item_type", "dominant_color", "style"]
+        required = ["category", "type", "dominant_color", "style"]
         missing = [f for f in required if not raw.get(f)]
         if missing:
             logger.error(f"GPT-4o missing fields: {missing}")
