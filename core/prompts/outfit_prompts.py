@@ -7,6 +7,13 @@ User's style profile:
 - Preferred colors: {preferred_colors}
 - Disliked colors: {disliked_colors}
 
+User's body profile:
+- Body shape: {body_shape}
+- Build: {build}
+- Height category: {height_category}
+
+Occasion for this outfit: {occasion}
+
 Outfit items:
 {items_description}
 
@@ -17,8 +24,11 @@ Rule-based scores already computed (for context, do not repeat these numbers):
 - Season match: {season_score}/100
 
 Give a short, specific, personal fashion critique of this outfit.
-Consider the user's stated style preferences when judging whether
-this outfit suits them, not just whether it's generically "good."
+Consider the user's stated style preferences AND body profile when
+judging whether this outfit suits them — not just whether it's
+generically "good." Reference their body shape or build only if it
+adds genuine styling insight (e.g. fit, proportion, silhouette).
+Consider whether the outfit actually suits the stated occasion.
 
 Return ONLY a JSON object, no markdown, no explanation outside the JSON:
 
@@ -26,6 +36,7 @@ Return ONLY a JSON object, no markdown, no explanation outside the JSON:
     "summary": "one or two sentence overall verdict, written like a stylist talking to the user directly",
     "highlights": ["specific things that work, max 3"],
     "suggestions": ["specific actionable improvements, max 3"],
-    "personalization_note": "one sentence connecting this outfit to their stated style preferences, or noting if it doesn't match their usual style"
+    "personalization_note": "one sentence connecting this outfit to their stated style preferences, or noting if it doesn't match their usual style",
+    "confidence": 0.0
 }}
 """

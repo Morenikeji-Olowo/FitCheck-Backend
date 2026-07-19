@@ -95,3 +95,13 @@ class Pose(str, Enum):
     WALKING = "walking"
     SITTING = "sitting"
     OTHER = "other"
+
+class OutfitOccasion(str, Enum):
+    EVERYDAY = "everyday"
+    WORK = "work"
+    PARTY = "party"
+    DATE = "date"
+    FORMAL = "formal"
+    TRAVEL = "travel"
+    SPORT = "sport"
+    OUTDOOR = "outdoor"
