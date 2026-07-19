@@ -15,7 +15,11 @@ class ClothingItem(BaseModel):
     item_type: str
     colors: list[str]
     dominant_color: str
+    dominant_hex: str | None = None
     secondary_color: str | None = None
+    secondary_hex: str | None = None
+    accent_color: str | None = None
+    accent_hex: str | None = None
     pattern: Pattern
     style: Style
     seasons: list[Season]
@@ -30,14 +34,28 @@ class ClothingItem(BaseModel):
     times_worn: int = 0
     last_worn: datetime | None = None
     is_archived: bool = False
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC)
-    )
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     class Config:
         json_encoders = { uuid.UUID: str }
-
 class ClothingClassification(BaseModel):
+    category: Category
+    item_type: str
+    colors: list[str]
+    dominant_color: str
+    dominant_hex: str | None = None
+    secondary_color: str | None = None
+    secondary_hex: str | None = None
+    accent_color: str | None = None
+    accent_hex: str | None = None
+    pattern: Pattern
+    style: Style
+    seasons: list[Season]
+    occasions: list[Occasion]
+    brand: str | None = None
+    pairs_well_with: list[str] = []
+    material: str | None = None
+    classification_confidence: float = Field(ge=0, le=1)
     category: Category
     item_type: str
     colors: list[str]

@@ -9,10 +9,12 @@ from shared.models.enums import (
 logger = get_logger(__name__)
 
 MIN_CONFIDENCE = 0.5
-PROMPT_VERSION = "wardrobe-v1"
+PROMPT_VERSION = "wardrobe-v2"
 
 DEFAULT_SEASONS = [Season.ALL]
 DEFAULT_OCCASIONS = [Occasion.EVERYDAY]
+
+HEX_PATTERN_LEN = 7  # e.g. "#1F3B73"
 
 
 def classify_clothing(
@@ -22,15 +24,13 @@ def classify_clothing(
     """
     Sends clean clothing image to GPT-4o Vision.
     Returns validated ClothingClassification model.
-    Never returns raw dicts — worker gets a proper object.
     """
     try:
         logger.info(f"Starting clothing classification — prompt: {PROMPT_VERSION}")
 
         raw = vision_client.classify_clothing(image_bytes, content_type)
 
-        # Validate required fields
-        required = ["category", "colors", "style"]
+        required = ["category", "item_type", "dominant_color", "style"]
         missing = [f for f in required if not raw.get(f)]
         if missing:
             logger.error(f"GPT-4o missing fields: {missing}")
@@ -38,13 +38,6 @@ def classify_clothing(
                 "AI classification returned incomplete data. Please try again."
             )
 
-        # Validate colors list is not empty
-        colors = raw.get("colors", [])
-        if not colors:
-            logger.warning("GPT returned empty colors — using fallback")
-            colors = ["unknown"]
-
-        # Validate confidence
         confidence = float(raw.get("confidence", 0))
         if confidence < MIN_CONFIDENCE:
             logger.warning(f"Low confidence classification: {confidence}")
@@ -53,12 +46,27 @@ def classify_clothing(
                 "Please try a clearer photo."
             )
 
+        dominant_color = raw.get("dominant_color", "unknown")
+        dominant_hex = _validate_hex(raw.get("dominant_hex"))
+        secondary_color = raw.get("secondary_color")
+        secondary_hex = _validate_hex(raw.get("secondary_hex"))
+        accent_color = raw.get("accent_color")
+        accent_hex = _validate_hex(raw.get("accent_hex"))
+
+        colors = list(dict.fromkeys(
+            c for c in [dominant_color, secondary_color, accent_color] if c
+        ))
+
         classification = ClothingClassification(
             category=_parse_enum(Category, raw.get("category"), Category.TOP),
             item_type=raw.get("item_type", raw.get("type", "unknown")),
             colors=colors,
-            dominant_color=colors[0],
-            secondary_color=colors[1] if len(colors) > 1 else None,
+            dominant_color=dominant_color,
+            dominant_hex=dominant_hex,
+            secondary_color=secondary_color,
+            secondary_hex=secondary_hex,
+            accent_color=accent_color,
+            accent_hex=accent_hex,
             pattern=_parse_enum(Pattern, raw.get("pattern"), Pattern.SOLID),
             style=_parse_enum(Style, raw.get("style"), Style.CASUAL),
             seasons=_parse_enum_list(Season, raw.get("season", []), DEFAULT_SEASONS),
@@ -71,7 +79,7 @@ def classify_clothing(
 
         logger.info(
             f"Classification complete — {classification.category} / "
-            f"{classification.style} / confidence: {confidence}"
+            f"{classification.style} / hex={dominant_hex} / confidence: {confidence}"
         )
         return classification
 
@@ -82,8 +90,23 @@ def classify_clothing(
         raise AIAnalysisError()
 
 
+def _validate_hex(value) -> str | None:
+    """Validate GPT returned a real hex code, otherwise return None."""
+    if not value or not isinstance(value, str):
+        return None
+    value = value.strip()
+    if not value.startswith("#") or len(value) != HEX_PATTERN_LEN:
+        logger.warning(f"Invalid hex value from GPT: '{value}' — discarding")
+        return None
+    try:
+        int(value[1:], 16)
+        return value.upper()
+    except ValueError:
+        logger.warning(f"Invalid hex value from GPT: '{value}' — discarding")
+        return None
+
+
 def _parse_enum(enum_class, value, default):
-    """Parse external value into enum — return default if unknown."""
     try:
         return enum_class(str(value).lower())
     except (ValueError, KeyError):
@@ -94,7 +117,8 @@ def _parse_enum(enum_class, value, default):
 
 
 def _parse_enum_list(enum_class, values: list, default: list) -> list:
-    """Parse list of strings into enum values — skip unknowns."""
+    if not values:
+        return default
     result = []
     for v in values:
         try:

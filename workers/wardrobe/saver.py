@@ -43,7 +43,11 @@ def save_clothing_item(item: ClothingItem, image_bytes: bytes) -> ClothingItem:
             "item_type": item.item_type,
             "colors": item.colors,
             "dominant_color": item.dominant_color,
+            "dominant_hex": item.dominant_hex,
             "secondary_color": item.secondary_color,
+            "secondary_hex": item.secondary_hex,
+            "accent_color": item.accent_color,
+            "accent_hex": item.accent_hex,
             "pattern": item.pattern.value if item.pattern else None,
             "style": item.style.value if item.style else None,
             "seasons": [s.value for s in item.seasons],
@@ -63,7 +67,6 @@ def save_clothing_item(item: ClothingItem, image_bytes: bytes) -> ClothingItem:
             "times_worn": 0,
             "is_archived": False
         }
-
         result = supabase.table("closet_items").insert(data).execute()
 
         if not result.data:

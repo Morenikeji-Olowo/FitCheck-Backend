@@ -5,7 +5,12 @@ Do not wrap in markdown. Do not include explanations.
 {
     "category": "top|bottom|shoes|bag|accessory|jewellery|headwear|scarf|belt|outerwear|dress",
     "type": "specific type e.g. hoodie, jeans, sneakers",
-    "colors": ["primary color", "secondary color if any"],
+    "dominant_color": "human-readable color name e.g. navy",
+    "dominant_hex": "hex code of the dominant color e.g. #1F3B73",
+    "secondary_color": "human-readable color name or null if none",
+    "secondary_hex": "hex code or null if no secondary color",
+    "accent_color": "human-readable color name or null if none",
+    "accent_hex": "hex code or null if no accent color",
     "pattern": "solid|striped|floral|graphic|checkered|animal|abstract",
     "style": "casual|formal|streetwear|business|athletic|vintage",
     "season": ["spring|summer|fall|winter"],
@@ -15,5 +20,6 @@ Do not wrap in markdown. Do not include explanations.
     "confidence": 0.0 to 1.0
 }
 
-Return only the JSON. Nothing else.
+Estimate hex codes as accurately as possible based on what you 
+visually observe in the image. Return only the JSON. Nothing else.
 """

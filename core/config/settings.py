@@ -50,6 +50,12 @@ class Settings:
         #avater
         self.MIN_BODY_CONFIDENCE = float(os.getenv("MIN_BODY_CONFIDENCE", 0.4))
         
+        # Outfit compatibility weights
+        self.COLOR_WEIGHT = float(os.getenv("COLOR_WEIGHT", 0.40))
+        self.STYLE_WEIGHT = float(os.getenv("STYLE_WEIGHT", 0.30))
+        self.OCCASION_WEIGHT = float(os.getenv("OCCASION_WEIGHT", 0.15))
+        self.SEASON_WEIGHT = float(os.getenv("SEASON_WEIGHT", 0.15))
+        
         required = {
         "OPENAI_API_KEY": self.OPENAI_API_KEY,
         "AWS_BUCKET_NAME": self.AWS_BUCKET_NAME,

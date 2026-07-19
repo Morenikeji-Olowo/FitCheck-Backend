@@ -15,15 +15,9 @@ def build_clothing_item(
     clean_image_url: str,
     image_bytes: bytes
 ) -> ClothingItem:
-    """
-    Takes classification result + image URLs
-    and builds a complete ClothingItem model.
-    This is the final step before saving to database.
-    """
     try:
         logger.info("Building clothing item metadata")
 
-        # Get image dimensions
         width, height = _get_dimensions(image_bytes)
 
         item = ClothingItem(
@@ -35,7 +29,11 @@ def build_clothing_item(
             item_type=classification.item_type,
             colors=classification.colors,
             dominant_color=classification.dominant_color,
+            dominant_hex=classification.dominant_hex,
             secondary_color=classification.secondary_color,
+            secondary_hex=classification.secondary_hex,
+            accent_color=classification.accent_color,
+            accent_hex=classification.accent_hex,
             pattern=classification.pattern,
             style=classification.style,
             seasons=classification.seasons,
@@ -61,7 +59,6 @@ def build_clothing_item(
 
 
 def _get_dimensions(image_bytes: bytes) -> tuple[int, int]:
-    """Extract width and height from image bytes."""
     try:
         image = Image.open(io.BytesIO(image_bytes))
         return image.size
