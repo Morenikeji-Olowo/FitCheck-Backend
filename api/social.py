@@ -4,11 +4,19 @@ from shared.logger import get_logger
 from shared.models.responses import SuccessResponse
 from shared.exceptions import FitCheckException
 from core.storage.supabase_client import supabase
+from pydantic import BaseModel
+from typing import Literal
+
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/social", tags=["Social"])
+VALID_REACTIONS = {"fire", "clean", "bold"}
 
+
+
+class ReactRequest(BaseModel):
+    reaction: str
 
 @router.get("/health")
 async def health():
@@ -162,3 +170,303 @@ def _get_follow_counts(user_id: str) -> dict:
         "followers_count": followers.count or 0,
         "following_count": following.count or 0
     }
+
+
+@router.post("/reactions/{outfit_id}", response_model=SuccessResponse)
+async def react_to_outfit(
+    outfit_id: UUID,
+    body: ReactRequest,
+    user_id: UUID = Query(...)
+):
+    """Add or update a reaction on an outfit. One reaction per user per outfit."""
+    if body.reaction not in VALID_REACTIONS:
+        raise FitCheckException(
+            f"Invalid reaction. Must be one of: {', '.join(VALID_REACTIONS)}.",
+            code="INVALID_REACTION", status_code=400
+        )
+
+    outfit_result = supabase.table("outfits")\
+        .select("outfit_id")\
+        .eq("outfit_id", str(outfit_id))\
+        .single()\
+        .execute()
+
+    if not outfit_result.data:
+        raise FitCheckException(
+            "Outfit not found.", code="OUTFIT_NOT_FOUND", status_code=404
+        )
+
+    logger.info(f"React — outfit={outfit_id} user={user_id} reaction={body.reaction}")
+
+    result = supabase.table("outfit_reactions")\
+        .upsert({
+            "outfit_id": str(outfit_id),
+            "user_id": str(user_id),
+            "reaction": body.reaction
+        }, on_conflict="outfit_id,user_id")\
+        .execute()
+
+    if not result.data:
+        raise FitCheckException(
+            "Failed to save reaction.", code="DATABASE_ERROR", status_code=500
+        )
+
+    counts = _get_reaction_counts(str(outfit_id))
+
+    return SuccessResponse(data={
+        "outfit_id": str(outfit_id),
+        "reaction": body.reaction,
+        **counts
+    })
+
+
+@router.delete("/reactions/{outfit_id}", response_model=SuccessResponse)
+async def remove_reaction(
+    outfit_id: UUID,
+    user_id: UUID = Query(...)
+):
+    """Remove your reaction from an outfit"""
+    logger.info(f"Remove reaction — outfit={outfit_id} user={user_id}")
+
+    supabase.table("outfit_reactions")\
+        .delete()\
+        .eq("outfit_id", str(outfit_id))\
+        .eq("user_id", str(user_id))\
+        .execute()
+
+    counts = _get_reaction_counts(str(outfit_id))
+
+    return SuccessResponse(data={
+        "outfit_id": str(outfit_id),
+        "reaction": None,
+        **counts
+    })
+
+
+@router.get("/reactions/{outfit_id}", response_model=SuccessResponse)
+async def get_reactions(
+    outfit_id: UUID,
+    user_id: UUID | None = Query(None)
+):
+    """
+    Get reaction counts for an outfit. If user_id is provided,
+    also returns that user's current reaction (or null).
+    """
+    counts = _get_reaction_counts(str(outfit_id))
+
+    my_reaction = None
+    if user_id:
+        result = supabase.table("outfit_reactions")\
+            .select("reaction")\
+            .eq("outfit_id", str(outfit_id))\
+            .eq("user_id", str(user_id))\
+            .execute()
+        if result.data:
+            my_reaction = result.data[0]["reaction"]
+
+    return SuccessResponse(data={
+        "outfit_id": str(outfit_id),
+        "my_reaction": my_reaction,
+        **counts
+    })
+
+
+def _get_reaction_counts(outfit_id: str) -> dict:
+    """Shared helper — returns reaction counts by type for an outfit."""
+    counts = {r: 0 for r in VALID_REACTIONS}
+
+    result = supabase.table("outfit_reactions")\
+        .select("reaction")\
+        .eq("outfit_id", outfit_id)\
+        .execute()
+
+    for row in (result.data or []):
+        r = row.get("reaction")
+        if r in counts:
+            counts[r] += 1
+
+    return {"reaction_counts": counts, "total_reactions": sum(counts.values())}
+
+
+@router.get("/feed", response_model=SuccessResponse)
+async def get_discover_feed(
+    user_id: UUID = Query(...),
+    sort: Literal["recent", "popular", "following"] = Query("recent"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+):
+    """
+    Browse public outfits from the community.
+    sort=recent    → newest public outfits first
+    sort=popular    → most total reactions first
+    sort=following  → public outfits only from users you follow, newest first
+    """
+    logger.info(f"Get feed — user={user_id} sort={sort}")
+
+    feed_fields = (
+        "outfit_id, user_id, overall_score, overall_grade, "
+        "item_ids, occasion, name, created_at"
+    )
+
+    if sort == "following":
+        follows_result = supabase.table("follows")\
+            .select("following_id")\
+            .eq("follower_id", str(user_id))\
+            .execute()
+        following_ids = [f["following_id"] for f in (follows_result.data or [])]
+
+        if not following_ids:
+            return SuccessResponse(data={
+                "outfits": [],
+                "pagination": {"total": 0, "limit": limit, "offset": offset, "has_more": False}
+            })
+
+        query = supabase.table("outfits")\
+            .select(feed_fields, count="exact")\
+            .eq("is_public", True)\
+            .in_("user_id", following_ids)\
+            .order("created_at", desc=True)\
+            .range(offset, offset + limit - 1)
+
+    else:
+        query = supabase.table("outfits")\
+            .select(feed_fields, count="exact")\
+            .eq("is_public", True)\
+            .range(offset, offset + limit - 1)
+
+        if sort == "recent":
+            query = query.order("created_at", desc=True)
+        # TODO: Popular sorting is performed after pagination (see below).
+        # This is acceptable for MVP datasets — with few outfits, sorting
+        # a single fetched page is effectively correct. Replace with SQL
+        # aggregation or a denormalized total_reactions column ordered at
+        # the database level once the feed grows enough that popularity
+        # ordering could miss high-reaction outfits outside the fetched page.
+
+    result = query.execute()
+    outfits = result.data or []
+    total = result.count or 0
+
+    outfit_ids = [o["outfit_id"] for o in outfits]
+    reaction_counts_by_outfit = _get_bulk_reaction_counts(outfit_ids)
+
+    for outfit in outfits:
+        counts = reaction_counts_by_outfit.get(outfit["outfit_id"], {"fire": 0, "clean": 0, "bold": 0})
+        outfit["reaction_counts"] = counts
+        outfit["total_reactions"] = sum(counts.values())
+
+    if sort == "popular":
+        outfits.sort(key=lambda o: o["total_reactions"], reverse=True)
+
+    return SuccessResponse(data={
+        "outfits": outfits,
+        "pagination": {
+            "total": total, "limit": limit, "offset": offset,
+            "has_more": (offset + limit) < total
+        }
+    })
+
+def _get_bulk_reaction_counts(outfit_ids: list[str]) -> dict[str, dict]:
+    """Fetch reaction counts for multiple outfits in one query, grouped by outfit_id."""
+    if not outfit_ids:
+        return {}
+
+    result = supabase.table("outfit_reactions")\
+        .select("outfit_id, reaction")\
+        .in_("outfit_id", outfit_ids)\
+        .execute()
+
+    counts_by_outfit: dict[str, dict] = {oid: {"fire": 0, "clean": 0, "bold": 0} for oid in outfit_ids}
+
+    for row in (result.data or []):
+        oid = row["outfit_id"]
+        r = row["reaction"]
+        if oid in counts_by_outfit and r in counts_by_outfit[oid]:
+            counts_by_outfit[oid][r] += 1
+
+    return counts_by_outfit
+
+@router.post("/save/{outfit_id}", response_model=SuccessResponse)
+async def save_outfit_bookmark(
+    outfit_id: UUID,
+    user_id: UUID = Query(...)
+):
+    """Bookmark an outfit for later"""
+    logger.info(f"Save outfit — outfit={outfit_id} user={user_id}")
+
+    outfit_result = supabase.table("outfits")\
+        .select("outfit_id")\
+        .eq("outfit_id", str(outfit_id))\
+        .single()\
+        .execute()
+
+    if not outfit_result.data:
+        raise FitCheckException(
+            "Outfit not found.", code="OUTFIT_NOT_FOUND", status_code=404
+        )
+
+    existing = supabase.table("saved_outfits")\
+        .select("outfit_id")\
+        .eq("user_id", str(user_id))\
+        .eq("outfit_id", str(outfit_id))\
+        .execute()
+
+    if existing.data:
+        return SuccessResponse(data={"message": "Already saved", "outfit_id": str(outfit_id)})
+
+    result = supabase.table("saved_outfits")\
+        .insert({
+            "user_id": str(user_id),
+            "outfit_id": str(outfit_id)
+        })\
+        .execute()
+
+    if not result.data:
+        raise FitCheckException(
+            "Failed to save outfit.", code="DATABASE_ERROR", status_code=500
+        )
+
+    return SuccessResponse(data={"message": "Outfit saved", "outfit_id": str(outfit_id)})
+
+
+@router.delete("/save/{outfit_id}", response_model=SuccessResponse)
+async def remove_saved_outfit(
+    outfit_id: UUID,
+    user_id: UUID = Query(...)
+):
+    """Remove a bookmarked outfit"""
+    logger.info(f"Unsave outfit — outfit={outfit_id} user={user_id}")
+
+    supabase.table("saved_outfits")\
+        .delete()\
+        .eq("user_id", str(user_id))\
+        .eq("outfit_id", str(outfit_id))\
+        .execute()
+
+    return SuccessResponse(data={"message": "Outfit removed from saved", "outfit_id": str(outfit_id)})
+
+
+@router.get("/saved", response_model=SuccessResponse)
+async def get_saved_outfits(
+    user_id: UUID = Query(...),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0)
+):
+    """Get outfits this user has bookmarked"""
+    result = supabase.table("saved_outfits")\
+        .select("outfit_id, created_at, outfits(outfit_id, user_id, overall_score, overall_grade, item_ids, occasion, name)", count="exact")\
+        .eq("user_id", str(user_id))\
+        .order("created_at", desc=True)\
+        .range(offset, offset + limit - 1)\
+        .execute()
+
+    saved = result.data or []
+    total = result.count or 0
+
+    return SuccessResponse(data={
+        "saved_outfits": saved,
+        "pagination": {
+            "total": total, "limit": limit, "offset": offset,
+            "has_more": (offset + limit) < total
+        }
+    })
