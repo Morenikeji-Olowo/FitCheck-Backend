@@ -29,14 +29,9 @@ async def generate_outfit_suggestions(
     body: GenerateRequest,
     user_id: UUID = Query(...)
 ):
-    """
-    Fast, instant outfit generation — no AI call.
-    Returns top N scored candidates. Call POST /api/outfit/analyze
-    separately on the chosen result for a rich AI critique.
-    """
     logger.info(f"Generate request — user={user_id} occasion={body.occasion}")
 
-    results = await run_stylist_pipeline(
+    result = await run_stylist_pipeline(
         user_id=str(user_id),
         occasion=body.occasion.value,
         mood=body.mood.value if body.mood else None,
@@ -45,10 +40,26 @@ async def generate_outfit_suggestions(
         max_results=body.max_results
     )
 
+    status = "ok" if result["success"] else result["reason"]
+    message = None
+    if not result["success"]:
+        if result["reason"] == "insufficient_wardrobe":
+            missing = result["missing_categories"]
+            message = (
+                f"Add {' and '.join(missing)} to your wardrobe to unlock "
+                f"outfit suggestions." if missing
+                else "Add a few more items to unlock outfit suggestions."
+            )
+        else:
+            message = "We couldn't put together an outfit right now. Try again."
+
     return SuccessResponse(data={
-        "outfits": results,
+        "outfits": result["outfits"],
         "generated_at": datetime.now(UTC).isoformat(),
         "occasion": body.occasion.value,
         "mood": body.mood.value if body.mood else None,
-        "count": len(results)
+        "count": len(result["outfits"]),
+        "status": status,
+        "message": message,
+        "missing_categories": result["missing_categories"]
     })

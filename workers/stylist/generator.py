@@ -5,7 +5,8 @@ from shared.exceptions import FitCheckException
 
 logger = get_logger(__name__)
 
-MAX_TOPS_PER_CATEGORY = 6   # pruning cap per category, not random sampling
+SINGLE_ITEM_CATEGORIES = {"top", "bottom", "shoes", "dress", "outerwear"}
+REQUIRED_FOR_OUTFIT = ["bottom", "shoes"]  # what a top-based outfit needs beyond a top
 
 MOOD_STYLE_PRIORITY = {
     "confident": ["streetwear", "formal"],
@@ -13,6 +14,8 @@ MOOD_STYLE_PRIORITY = {
     "relaxed": ["casual"],
     "professional": ["business", "formal"],
 }
+
+MAX_ITEMS_PER_CATEGORY = 6
 
 
 def generate_outfits(
@@ -22,11 +25,20 @@ def generate_outfits(
     weather: dict | None = None,
     excluded_item_ids: list[str] | None = None,
     max_results: int = 3
-) -> list[dict]:
+) -> dict:
     """
     Generates and ranks candidate outfits from a user's wardrobe.
-    Pure logic — no AI call. Returns full item objects, not just IDs,
-    so Flutter can render results without a follow-up fetch.
+    Pure logic — no AI call. Never raises for "not enough items" —
+    that's a normal state, not an error. Returns a structured result
+    the caller can turn into whatever HTTP/UX response makes sense.
+
+    Returns:
+    {
+        "success": bool,
+        "outfits": [...],           # empty if insufficient wardrobe
+        "reason": str | None,       # "insufficient_wardrobe" if applicable
+        "missing_categories": [...] # what's needed to unlock generation
+    }
     """
     excluded = set(excluded_item_ids or [])
     logger.info(
@@ -34,53 +46,46 @@ def generate_outfits(
         occasion, mood, len(wardrobe_items)
     )
 
-    # 1. Filter by occasion + exclusions
     pool = [
         item for item in wardrobe_items
         if item["item_id"] not in excluded
         and (occasion in (item.get("occasions") or []) or occasion == "everyday")
     ]
 
-    # 2. Filter by weather
     if weather:
         pool = _filter_by_weather(pool, weather)
 
-    # 3. Filter/prioritize by mood — actually shapes the candidate pool now
     if mood:
         pool = _prioritize_by_mood(pool, mood)
 
     by_category = _group_by_category(pool)
 
-    if not _has_viable_outfit(by_category):
-        logger.warning("Not enough items across categories to generate an outfit")
-        raise FitCheckException(
-            "Not enough wardrobe items to generate an outfit for this occasion. "
-            "Try adding more items or choosing a different occasion.",
-            code="INSUFFICIENT_WARDROBE", status_code=400
+    missing = _find_missing_categories(by_category)
+    if missing:
+        logger.warning(
+            "Insufficient wardrobe for generation — missing=%s", missing
         )
+        return {
+            "success": False,
+            "outfits": [],
+            "reason": "insufficient_wardrobe",
+            "missing_categories": missing
+        }
 
-    # 4. Prune each category BEFORE combining — deterministic, not random
     by_category = _prune_categories(by_category)
-
     candidates = _build_candidates(by_category)
-
-    if not candidates:
-        raise FitCheckException(
-            "Could not generate a valid outfit from your wardrobe for this occasion.",
-            code="INSUFFICIENT_WARDROBE", status_code=400
-        )
 
     scored = []
     for candidate_items in candidates:
         try:
             validate_outfit_composition(candidate_items)
         except FitCheckException:
-            continue
+            continue  # skip invalid combos, validator stays strict
 
         scores = calculate_compatibility(candidate_items)
         scored.append({
             "item_ids": [item["item_id"] for item in candidate_items],
-            "items": candidate_items,  # full objects — Flutter renders directly
+            "items": candidate_items,
             "score": scores["overall_score"],
             "grade": scores["overall_grade"],
             "strengths": scores["strengths"],
@@ -91,14 +96,54 @@ def generate_outfits(
     scored.sort(key=lambda x: x["score"], reverse=True)
     top_results = scored[:max_results]
 
+    if not top_results:
+        # Composition possible in theory, but nothing survived validation
+        # (e.g. bad data). Same clean non-error response.
+        logger.warning("No valid outfit candidates survived scoring")
+        return {
+            "success": False,
+            "outfits": [],
+            "reason": "no_valid_combination",
+            "missing_categories": []
+        }
+
     logger.info(
         "Generated %d candidates, returning top %d — best score=%s",
-        len(scored), len(top_results),
-        top_results[0]["score"] if top_results else "none"
+        len(scored), len(top_results), top_results[0]["score"]
     )
 
-    return top_results
+    return {
+        "success": True,
+        "outfits": top_results,
+        "reason": None,
+        "missing_categories": []
+    }
 
+
+def _find_missing_categories(by_category: dict[str, list[dict]]) -> list[str]:
+    """
+    Determines what's missing to build ANY valid outfit.
+    Validator requires MIN_ITEMS=2 unconditionally, so a dress alone
+    is NOT enough — it needs a second item (shoes) to meet that bar.
+    """
+    has_dress = bool(by_category.get("dress"))
+    has_top = bool(by_category.get("top"))
+    has_bottom = bool(by_category.get("bottom"))
+    has_shoes = bool(by_category.get("shoes"))
+
+    if has_dress:
+        return [] if has_shoes else ["shoes"]
+
+    missing = []
+    if not has_top:
+        missing.append("top")
+    if not has_bottom:
+        missing.append("bottom")
+
+    if not missing and not has_shoes:
+        missing.append("shoes")
+
+    return missing
 
 def _group_by_category(items: list[dict]) -> dict[str, list[dict]]:
     grouped: dict[str, list[dict]] = {}
@@ -108,18 +153,7 @@ def _group_by_category(items: list[dict]) -> dict[str, list[dict]]:
     return grouped
 
 
-def _has_viable_outfit(by_category: dict[str, list[dict]]) -> bool:
-    has_dress = bool(by_category.get("dress"))
-    has_top_bottom = bool(by_category.get("top")) and bool(by_category.get("bottom"))
-    return has_dress or has_top_bottom
-
-
 def _prune_categories(by_category: dict[str, list[dict]]) -> dict[str, list[dict]]:
-    """
-    Cap items per category deterministically — most recently added / 
-    most favorited first, not random. Keeps candidate count sane 
-    without discarding the "best" items by chance.
-    """
     pruned = {}
     for cat, items in by_category.items():
         sorted_items = sorted(
@@ -127,19 +161,19 @@ def _prune_categories(by_category: dict[str, list[dict]]) -> dict[str, list[dict
             key=lambda i: (i.get("favorite", False), i.get("times_worn", 0)),
             reverse=True
         )
-        pruned[cat] = sorted_items[:MAX_TOPS_PER_CATEGORY]
+        pruned[cat] = sorted_items[:MAX_ITEMS_PER_CATEGORY]
     return pruned
 
 
 def _build_candidates(by_category: dict[str, list[dict]]) -> list[list[dict]]:
     from itertools import product
     candidates = []
-    shoes = by_category.get("shoes", [None])
+    shoes = by_category.get("shoes") or [None]
 
     if by_category.get("dress"):
         for dress, shoe in product(by_category["dress"], shoes):
             combo = [dress] + ([shoe] if shoe else [])
-            candidates.append(combo)
+            candidates.append(combo)  # no length filter — validator handles it
 
     if by_category.get("top") and by_category.get("bottom"):
         for top, bottom, shoe in product(
@@ -150,19 +184,16 @@ def _build_candidates(by_category: dict[str, list[dict]]) -> list[list[dict]]:
 
     return candidates
 
-
 def _filter_by_weather(items: list[dict], weather: dict) -> list[dict]:
     temp = weather.get("temp_celsius")
     if temp is None:
         return items
-
     if temp >= 25:
         target_seasons = {"summer", "spring"}
     elif temp <= 12:
         target_seasons = {"winter", "fall"}
     else:
         target_seasons = {"spring", "fall", "summer", "winter"}
-
     filtered = [
         item for item in items
         if not item.get("seasons") or set(item["seasons"]) & target_seasons
@@ -171,17 +202,11 @@ def _filter_by_weather(items: list[dict], weather: dict) -> list[dict]:
 
 
 def _prioritize_by_mood(items: list[dict], mood: str) -> list[dict]:
-    """
-    Mood shapes the candidate pool itself, not just the explanation text.
-    Prefer items matching mood-associated styles when enough exist;
-    never filter down to nothing.
-    """
     preferred_styles = MOOD_STYLE_PRIORITY.get(mood.lower())
     if not preferred_styles:
         return items
-
     matched = [item for item in items if item.get("style") in preferred_styles]
-    return matched if len(matched) >= 4 else items  # fall back if too restrictive
+    return matched if len(matched) >= 4 else items
 
 
 def _build_reason(scores: dict, mood: str | None) -> str:
@@ -194,7 +219,6 @@ def _build_reason(scores: dict, mood: str | None) -> str:
         parts.append("great fit for the occasion")
     if mood:
         parts.append(f"suits a {mood} mood")
-
     if not parts:
         return "A balanced option from your wardrobe."
     return "Matches your wardrobe with " + ", ".join(parts) + "."

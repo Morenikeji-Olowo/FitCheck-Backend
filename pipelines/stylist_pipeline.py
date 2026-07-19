@@ -13,21 +13,12 @@ async def run_stylist_pipeline(
     weather: dict | None = None,
     excluded_item_ids: list[str] | None = None,
     max_results: int = 3
-) -> list[dict]:
-    """
-    Orchestrates the full recommendation flow:
-    Fetch wardrobe → Generate + score candidates → Return top 3.
-
-    This is the single entry point every Phase 6 feature calls into
-    (Daily Suggestion, Dress Me For This, Weekly Planner) — none of
-    them duplicate wardrobe fetching or generation logic.
-    """
+) -> dict:
     logger.info(
         "Stylist pipeline started — user=%s occasion=%s mood=%s",
         user_id, occasion, mood
     )
 
-    # 1. Fetch wardrobe — active items only, same fields the generator needs
     wardrobe_result = supabase.table("closet_items")\
         .select("item_id, category, item_type, dominant_color, dominant_hex, "
                 "clean_image_url, pattern, style, occasions, seasons, "
@@ -39,14 +30,14 @@ async def run_stylist_pipeline(
     wardrobe_items = wardrobe_result.data or []
 
     if len(wardrobe_items) < 2:
-        raise FitCheckException(
-            "Your wardrobe needs at least a few items before FitCheck "
-            "can suggest an outfit. Add some clothes first.",
-            code="INSUFFICIENT_WARDROBE", status_code=400
-        )
+        return {
+            "success": False,
+            "outfits": [],
+            "reason": "insufficient_wardrobe",
+            "missing_categories": ["top", "bottom"]
+        }
 
-    # 2. Generate — pure logic, no AI, no further DB access
-    results = generate_outfits(
+    result = generate_outfits(
         wardrobe_items=wardrobe_items,
         occasion=occasion,
         mood=mood,
@@ -56,9 +47,8 @@ async def run_stylist_pipeline(
     )
 
     logger.info(
-        "Stylist pipeline complete — user=%s candidates_returned=%d",
-        user_id, len(results)
+        "Stylist pipeline complete — user=%s success=%s outfits=%d",
+        user_id, result["success"], len(result["outfits"])
     )
 
-    return results
-
+    return result

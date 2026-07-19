@@ -8,13 +8,6 @@ MIN_ITEMS = 2
 
 
 def validate_outfit_composition(items: list[dict]) -> None:
-    """
-    Validates that a set of items forms a sensible outfit.
-    Rules:
-    - At most one item per single-item category (top, bottom, shoes, dress, outerwear)
-    - Unlimited accessories, bags, jewellery, headwear, scarves, belts
-    - A dress counts as satisfying both top and bottom
-    """
     if len(items) < MIN_ITEMS:
         raise FitCheckException(
             "An outfit needs at least 2 items.",
@@ -34,8 +27,7 @@ def validate_outfit_composition(items: list[dict]) -> None:
     if duplicates:
         logger.warning(f"Outfit rejected — duplicate categories: {duplicates}")
         raise FitCheckException(
-            f"An outfit can only have one item per category: "
-            f"{', '.join(duplicates)}.",
+            f"An outfit can only have one item per category: {', '.join(duplicates)}.",
             code="INVALID_OUTFIT_COMPOSITION", status_code=400
         )
 
