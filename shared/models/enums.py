@@ -105,3 +105,11 @@ class OutfitOccasion(str, Enum):
     TRAVEL = "travel"
     SPORT = "sport"
     OUTDOOR = "outdoor"
+
+class OutfitMood(str, Enum):
+    RELAXED = "relaxed"
+    CONFIDENT = "confident"
+    PROFESSIONAL = "professional"
+    DATE = "date"
+    SPORTY = "sporty"
+    CREATIVE = "creative"
