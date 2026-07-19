@@ -6,6 +6,8 @@ from shared.logger import get_logger
 from shared.models.responses import SuccessResponse
 from shared.models.enums import OutfitOccasion, OutfitMood
 from pipelines.stylist_pipeline import run_stylist_pipeline
+from workers.stylist.intent_extractor import extract_intent
+
 
 logger = get_logger(__name__)
 
@@ -20,6 +22,12 @@ class GenerateRequest(BaseModel):
     excluded_item_ids: list[UUID] = Field(default_factory=list)
     max_results: int = 3
 
+class DressMeForThisRequest(BaseModel):
+    text: str
+    latitude: float | None = None
+    longitude: float | None = None
+    excluded_item_ids: list[UUID] = Field(default_factory=list)
+    max_results: int = 3
 
 @router.get("/health")
 async def health():
@@ -53,5 +61,39 @@ async def generate_outfit_suggestions(
         "generated_at": datetime.now(UTC).isoformat(),
         "occasion": body.occasion.value,
         "mood": body.mood.value if body.mood else None,
+        "count": len(outfits)
+    })
+    
+@router.post("/dress-me-for-this", response_model=SuccessResponse)
+async def dress_me_for_this(
+    body: DressMeForThisRequest,
+    user_id: UUID = Query(...)
+):
+    """
+    Text input → GPT extracts occasion/mood → same stylist pipeline
+    as /generate. GPT never sees wardrobe data; it only translates
+    the user's sentence into the same structured inputs the
+    Recommendation Engine already understands.
+    """
+    logger.info(f"Dress-me-for-this request — user={user_id} text='{body.text[:100]}'")
+
+    intent = extract_intent(body.text)
+
+    outfits = await run_stylist_pipeline(
+        user_id=str(user_id),
+        occasion=intent.occasion.value,
+        mood=intent.mood.value if intent.mood else None,
+        latitude=body.latitude,
+        longitude=body.longitude,
+        excluded_item_ids=[str(i) for i in body.excluded_item_ids],
+        max_results=body.max_results
+    )
+
+    return SuccessResponse(data={
+        "outfits": outfits,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "interpreted_occasion": intent.occasion.value,
+        "interpreted_mood": intent.mood.value if intent.mood else None,
+        "interpretation_confidence": intent.confidence,
         "count": len(outfits)
     })
