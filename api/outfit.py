@@ -10,6 +10,8 @@ from core.storage.supabase_client import supabase
 from workers.outfit.compatibility import calculate_compatibility
 from workers.outfit.validator import validate_outfit_composition
 from shared.models.enums import OutfitOccasion
+from shared.models.planned_outfit import CreatePlannedOutfitRequest, UpdatePlannedOutfitRequest
+from datetime import date
 
 logger = get_logger(__name__)
 
@@ -284,3 +286,130 @@ async def delete_outfit(outfit_id: UUID, user_id: UUID = Query(...)):
         )
 
     return SuccessResponse(data={"message": "Outfit deleted successfully"})
+
+
+@router.post("/planner", response_model=SuccessResponse)
+async def create_planned_outfit(
+    body: CreatePlannedOutfitRequest,
+    user_id: UUID = Query(...)
+):
+    """
+    Schedule an outfit for a specific date. Upserts on
+    (user_id, scheduled_date) — replanning a day overwrites
+    the previous entry rather than creating a duplicate.
+    """
+    logger.info(
+        f"Plan outfit — user={user_id} date={body.scheduled_date}"
+    )
+
+    ids = [str(i) for i in body.item_ids]
+
+    items_result = supabase.table("closet_items")\
+        .select("item_id")\
+        .eq("user_id", str(user_id))\
+        .in_("item_id", ids)\
+        .execute()
+
+    if not items_result.data or len(items_result.data) != len(ids):
+        raise ClothingItemNotFoundError()
+
+    data = {
+        "user_id": str(user_id),
+        "outfit_id": str(body.outfit_id) if body.outfit_id else None,
+        "item_ids": ids,
+        "scheduled_date": body.scheduled_date.isoformat(),
+        "occasion": body.occasion,
+        "notes": body.notes,
+        "source": body.source.value,
+    }
+
+    result = supabase.table("planned_outfits")\
+        .upsert(data, on_conflict="user_id,scheduled_date")\
+        .execute()
+
+    if not result.data:
+        raise FitCheckException(
+            "Failed to plan outfit.", code="DATABASE_ERROR", status_code=500
+        )
+
+    logger.info(f"Outfit planned — date={body.scheduled_date}")
+    return SuccessResponse(data=result.data[0])
+
+
+@router.get("/planner", response_model=SuccessResponse)
+async def get_planned_outfits(
+    user_id: UUID = Query(...),
+    start_date: date = Query(...),
+    end_date: date = Query(...)
+):
+    """Get planned outfits within a date range — e.g. one week."""
+    logger.info(
+        f"Get planner — user={user_id} range={start_date} to {end_date}"
+    )
+
+    result = supabase.table("planned_outfits")\
+        .select("*")\
+        .eq("user_id", str(user_id))\
+        .gte("scheduled_date", start_date.isoformat())\
+        .lte("scheduled_date", end_date.isoformat())\
+        .order("scheduled_date")\
+        .execute()
+
+    return SuccessResponse(data={"planned_outfits": result.data})
+
+
+@router.patch("/planner/{planned_id}", response_model=SuccessResponse)
+async def update_planned_outfit(
+    planned_id: UUID,
+    body: UpdatePlannedOutfitRequest,
+    user_id: UUID = Query(...)
+):
+    """Edit a planned outfit — change items, mark as worn/skipped, etc."""
+    updates = {}
+    if body.item_ids is not None:
+        updates["item_ids"] = [str(i) for i in body.item_ids]
+    if body.occasion is not None:
+        updates["occasion"] = body.occasion
+    if body.notes is not None:
+        updates["notes"] = body.notes
+    if body.status is not None:
+        updates["status"] = body.status.value
+
+    logger.info(
+        f"Update planned outfit={planned_id} user={user_id} fields={list(updates.keys())}"
+    )
+
+    if not updates:
+        return SuccessResponse(data={"message": "Nothing to update"})
+
+    result = supabase.table("planned_outfits")\
+        .update(updates)\
+        .eq("planned_id", str(planned_id))\
+        .eq("user_id", str(user_id))\
+        .execute()
+
+    if not result.data:
+        raise FitCheckException(
+            "Planned outfit not found.", code="PLANNED_OUTFIT_NOT_FOUND", status_code=404
+        )
+
+    return SuccessResponse(data=result.data[0])
+
+
+@router.delete("/planner/{planned_id}", response_model=SuccessResponse)
+async def delete_planned_outfit(planned_id: UUID, user_id: UUID = Query(...)):
+    """Remove a planned outfit"""
+    logger.info(f"Delete planned outfit={planned_id} user={user_id}")
+
+    result = supabase.table("planned_outfits")\
+        .delete()\
+        .eq("planned_id", str(planned_id))\
+        .eq("user_id", str(user_id))\
+        .execute()
+
+    if not result.data:
+        raise FitCheckException(
+            "Planned outfit not found.", code="PLANNED_OUTFIT_NOT_FOUND", status_code=404
+        )
+
+    return SuccessResponse(data={"message": "Planned outfit removed"})
