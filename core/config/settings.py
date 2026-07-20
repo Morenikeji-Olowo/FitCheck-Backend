@@ -26,6 +26,11 @@ class Settings:
         self.OPENWEATHER_BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
         self.WEATHER_TIMEOUT = int(os.getenv("WEATHER_TIMEOUT", 5))
 
+        self.STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+        self.STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+        self.STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
+        self.APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000")
+
          # Storage folders
         self.S3_AVATAR_FOLDER = os.getenv("S3_AVATAR_FOLDER", "avatars")
         self.S3_WARDROBE_FOLDER = os.getenv("S3_WARDROBE_FOLDER", "wardrobe")
