@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from uuid import UUID
 from shared.logger import get_logger
 from shared.models.responses import SuccessResponse
 from shared.models.style_profile import StyleProfile, UpdateStyleProfileRequest
 from shared.exceptions import FitCheckException
 from core.storage.supabase_client import supabase
+from shared.dependencies import get_current_user_id
+
 
 logger = get_logger(__name__)
 
@@ -17,15 +19,18 @@ async def health():
 
 
 @router.post("/create", response_model=SuccessResponse[StyleProfile])
-async def create_style_profile(profile: StyleProfile):
+async def create_style_profile(
+    profile: StyleProfile,
+    user_id: UUID = Depends(get_current_user_id)
+):
     """
     Create or replace style profile — called after onboarding quiz.
     Upsert — one profile per user always.
     """
-    logger.info(f"Create style profile — user={profile.user_id}")
+    logger.info(f"Create style profile — user={user_id}")
 
     data = {
-        "user_id": str(profile.user_id),
+        "user_id": str(user_id),
         "styles": profile.styles,
         "preferred_colors": profile.preferred_colors,
         "disliked_colors": profile.disliked_colors,
@@ -44,12 +49,11 @@ async def create_style_profile(profile: StyleProfile):
             status_code=500
         )
 
-    logger.info(f"Style profile saved — user={profile.user_id}")
+    logger.info(f"Style profile saved — user={user_id}")
     return SuccessResponse(data=result.data[0])
 
-
 @router.get("/me", response_model=SuccessResponse)
-async def get_my_style_profile(user_id: UUID = Query(...)):
+async def get_my_style_profile(user_id: UUID = Depends(get_current_user_id)):
     """Get current user's style profile"""
     logger.info(f"Get style profile — user={user_id}")
 
@@ -75,7 +79,7 @@ async def get_my_style_profile(user_id: UUID = Query(...)):
 @router.put("/me", response_model=SuccessResponse)
 async def update_style_profile(
     body: UpdateStyleProfileRequest,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """Edit style profile — partial update"""
     updates = body.model_dump(exclude_none=True, exclude_unset=True)
