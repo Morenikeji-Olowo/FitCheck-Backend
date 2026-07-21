@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Form, Query
+from fastapi import APIRouter, UploadFile, File, Form, Query, Depends
 from pydantic import BaseModel
 from typing import Optional
 from uuid import UUID
@@ -10,6 +10,7 @@ from shared.exceptions import ClothingItemNotFoundError
 from core.storage.supabase_client import supabase
 from core.storage.s3 import storage
 from pipelines.wardrobe_pipeline import run_wardrobe_pipeline
+from shared.dependencies import get_current_user_id
 
 logger = get_logger(__name__)
 
@@ -30,7 +31,7 @@ async def health():
 
 
 @router.get("/stats/summary", response_model=SuccessResponse)
-async def get_wardrobe_stats(user_id: UUID = Query(...)):
+async def get_wardrobe_stats(user_id: UUID = Depends(get_current_user_id)):
     """Get closet stats — count by category"""
     logger.info(f"Get stats user={user_id}")
 
@@ -56,7 +57,7 @@ async def get_wardrobe_stats(user_id: UUID = Query(...)):
 @router.post("/upload", response_model=SuccessResponse)
 async def upload_clothing_item(
     file: UploadFile = File(...),
-    user_id: UUID = Form(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """Upload and process a clothing item"""
     logger.info(f"Wardrobe upload user={user_id}")
@@ -66,7 +67,7 @@ async def upload_clothing_item(
 
 @router.get("/", response_model=SuccessResponse)
 async def get_wardrobe(
-    user_id: UUID = Query(...),
+    user_id: UUID = Depends(get_current_user_id),
     category: Optional[Category] = Query(None),
     search: Optional[str] = Query(None),
     favorites_only: bool = Query(False),
@@ -118,7 +119,7 @@ async def get_wardrobe(
 # ── Item routes ──────────
 
 @router.get("/{item_id}", response_model=SuccessResponse)
-async def get_wardrobe_item(item_id: UUID, user_id: UUID = Query(...)):
+async def get_wardrobe_item(item_id: UUID, user_id: UUID = Depends(get_current_user_id)):
     """Get single closet item by ID"""
     logger.info(f"Get item={item_id} user={user_id}")
 
@@ -139,7 +140,7 @@ async def get_wardrobe_item(item_id: UUID, user_id: UUID = Query(...)):
 async def update_wardrobe_item(
     item_id: UUID,
     body: UpdateClothingItemRequest,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """Edit clothing item metadata"""
     logger.info(f"Update item={item_id} user={user_id}")
@@ -162,7 +163,7 @@ async def update_wardrobe_item(
 
 
 @router.delete("/{item_id}", response_model=SuccessResponse)
-async def delete_wardrobe_item(item_id: UUID, user_id: UUID = Query(...)):
+async def delete_wardrobe_item(item_id: UUID, user_id: UUID = Depends(get_current_user_id)):
     """Delete clothing item + S3 images"""
     logger.info(f"Delete item={item_id} user={user_id}")
 
@@ -198,7 +199,7 @@ async def delete_wardrobe_item(item_id: UUID, user_id: UUID = Query(...)):
 
 
 @router.patch("/{item_id}/favorite", response_model=SuccessResponse)
-async def toggle_favorite(item_id: UUID, user_id: UUID = Query(...)):
+async def toggle_favorite(item_id: UUID, user_id: UUID = Depends(get_current_user_id)):
     """Toggle favorite status"""
     logger.info(f"Toggle favorite item={item_id} user={user_id}")
 
@@ -224,7 +225,7 @@ async def toggle_favorite(item_id: UUID, user_id: UUID = Query(...)):
 
 
 @router.patch("/{item_id}/worn", response_model=SuccessResponse)
-async def log_worn(item_id: UUID, user_id: UUID = Query(...)):
+async def log_worn(item_id: UUID, user_id: UUID = Depends(get_current_user_id)):
     """Log item as worn today"""
     logger.info(f"Log worn item={item_id} user={user_id}")
 
@@ -254,7 +255,7 @@ async def log_worn(item_id: UUID, user_id: UUID = Query(...)):
 
 
 @router.patch("/{item_id}/archive", response_model=SuccessResponse)
-async def toggle_archive(item_id: UUID, user_id: UUID = Query(...)):
+async def toggle_archive(item_id: UUID, user_id: UUID = Depends(get_current_user_id)):
     """Toggle archive status"""
     logger.info(f"Toggle archive item={item_id} user={user_id}")
 
