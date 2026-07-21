@@ -31,36 +31,37 @@ class StripeClient:
                 code="STRIPE_ERROR", status_code=500
             )
 
-def create_checkout_session(self, customer_id: str, user_id: str) -> str:
-    """Creates a Stripe Checkout session, returns the hosted checkout URL."""
-    try:
-        session = stripe.checkout.Session.create(
-            customer=customer_id,
-            mode="subscription",
-            line_items=[{"price": settings.STRIPE_PRICE_ID, "quantity": 1}],
-            success_url=f"{settings.APP_BASE_URL}/subscription/success",
-            cancel_url=f"{settings.APP_BASE_URL}/subscription/cancelled",
-            metadata={"user_id": user_id},
-            client_reference_id=user_id,
-            subscription_data={
-                "metadata": {"user_id": user_id}
-            }
-        )
+    def create_checkout_session(self, customer_id: str, user_id: str) -> str:
+        """Creates a Stripe Checkout session, returns the hosted checkout URL."""
+        try:
+            session = stripe.checkout.Session.create(
+                customer=customer_id,
+                mode="subscription",
+                line_items=[{"price": settings.STRIPE_PRICE_ID, "quantity": 1}],
+                success_url=f"{settings.APP_BASE_URL}/subscription/success",
+                cancel_url=f"{settings.APP_BASE_URL}/subscription/cancelled",
+                metadata={"user_id": user_id},
+                client_reference_id=user_id,
+                subscription_data={
+                    "metadata": {"user_id": user_id}
+                }
+            )
 
-        if not session.url:
+            if not session.url:
+                raise FitCheckException(
+                    "Checkout session could not be created.",
+                    code="STRIPE_ERROR", status_code=500
+                )
+
+            logger.info(f"Checkout session created — user={user_id} session={session.id}")
+            return session.url
+        except stripe.error.StripeError as e:
+            logger.error(f"Checkout session creation failed: {e}")
             raise FitCheckException(
-                "Checkout session could not be created.",
+                "Failed to start checkout. Please try again.",
                 code="STRIPE_ERROR", status_code=500
             )
 
-        logger.info(f"Checkout session created — user={user_id} session={session.id}")
-        return session.url
-    except stripe.error.StripeError as e:
-        logger.error(f"Checkout session creation failed: {e}")
-        raise FitCheckException(
-            "Failed to start checkout. Please try again.",
-            code="STRIPE_ERROR", status_code=500
-        )
     def cancel_subscription(self, subscription_id: str) -> None:
         """Cancels a subscription at the end of the current billing period."""
         try:

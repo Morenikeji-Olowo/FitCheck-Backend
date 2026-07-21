@@ -9,6 +9,7 @@ from api.style_profile import router as style_profile_router
 from api.outfit import router as outfit_router
 from api.stylist import router as stylist_router
 from api.social import router as social_router
+from api.subscription import router as subscription_router
 
 
 app = FastAPI(title="FitCheck AI Service")
@@ -53,6 +54,7 @@ app.include_router(style_profile_router, prefix="/api")
 app.include_router(outfit_router, prefix="/api")
 app.include_router(stylist_router, prefix="/api")
 app.include_router(social_router, prefix="/api")
+app.include_router(subscription_router, prefix="/api")
 
 
 @app.get("/")

@@ -44,18 +44,13 @@ async def cancel_subscription(user_id: UUID = Query(...)):
 
 @router.post("/webhook")
 async def stripe_webhook(request: Request):
-    """
-    Stripe calls this endpoint directly — not from Flutter.
-    Verifies the signature, then updates profiles based on the event.
-    Must return 200 quickly or Stripe will retry.
-    """
     payload = await request.body()
     signature = request.headers.get("stripe-signature", "")
 
     event = stripe_client.verify_webhook(payload, signature)
 
     event_type = event["type"]
-    data = event["data"]["object"]
+    data = event["data"]["object"].to_dict() 
 
     logger.info(f"Stripe webhook received — type={event_type}")
 
@@ -75,7 +70,6 @@ async def stripe_webhook(request: Request):
         logger.info(f"Unhandled webhook event type: {event_type}")
 
     return {"received": True}
-
 
 def _handle_checkout_completed(session: dict) -> None:
     """First successful payment — unlock premium."""
