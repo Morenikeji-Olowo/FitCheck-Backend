@@ -31,7 +31,9 @@ class Settings:
         self.STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
         self.APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000")
 
-         # Storage folders
+        self.DEV_AUTH_BYPASS = os.getenv("DEV_AUTH_BYPASS", "false").lower() == "true"
+        
+        # Storage folders
         self.S3_AVATAR_FOLDER = os.getenv("S3_AVATAR_FOLDER", "avatars")
         self.S3_WARDROBE_FOLDER = os.getenv("S3_WARDROBE_FOLDER", "wardrobe")
         
