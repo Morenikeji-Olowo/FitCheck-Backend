@@ -1,5 +1,5 @@
 import time
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from pydantic import BaseModel
 from uuid import UUID
 from workers.outfit.explainer import analyze_outfit
@@ -12,6 +12,8 @@ from workers.outfit.validator import validate_outfit_composition
 from shared.models.enums import OutfitOccasion
 from shared.models.planned_outfit import CreatePlannedOutfitRequest, UpdatePlannedOutfitRequest
 from datetime import date
+from shared.dependencies import get_current_user_id
+
 
 logger = get_logger(__name__)
 
@@ -43,7 +45,7 @@ async def health():
 @router.post("/compatibility", response_model=SuccessResponse)
 async def check_compatibility(
     body: CompatibilityRequest,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """
     Instant rule-based compatibility check.
@@ -98,7 +100,7 @@ async def check_compatibility(
 @router.post("/analyze", response_model=SuccessResponse)
 async def analyze_outfit_endpoint(
     body: AnalyzeRequest,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """
     Deep AI analysis — called after user pauses on an outfit.
@@ -170,7 +172,7 @@ async def analyze_outfit_endpoint(
 @router.post("/save", response_model=SuccessResponse)
 async def save_outfit(
     body: SaveOutfitRequest,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """
     Save a liked outfit combo.
@@ -246,7 +248,7 @@ async def save_outfit(
 
 @router.get("/", response_model=SuccessResponse)
 async def get_outfits(
-    user_id: UUID = Query(...),
+    user_id: UUID = Depends(get_current_user_id),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0)
 ):
@@ -270,7 +272,7 @@ async def get_outfits(
     })
 
 @router.delete("/{outfit_id}", response_model=SuccessResponse)
-async def delete_outfit(outfit_id: UUID, user_id: UUID = Query(...)):
+async def delete_outfit(outfit_id: UUID, user_id: UUID = Depends(get_current_user_id)):
     """Delete a saved outfit"""
     logger.info(f"Delete outfit — id={outfit_id} user={user_id}")
 
@@ -291,7 +293,7 @@ async def delete_outfit(outfit_id: UUID, user_id: UUID = Query(...)):
 @router.post("/planner", response_model=SuccessResponse)
 async def create_planned_outfit(
     body: CreatePlannedOutfitRequest,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """
     Schedule an outfit for a specific date. Upserts on
@@ -338,7 +340,7 @@ async def create_planned_outfit(
 
 @router.get("/planner", response_model=SuccessResponse)
 async def get_planned_outfits(
-    user_id: UUID = Query(...),
+    user_id: UUID = Depends(get_current_user_id),
     start_date: date = Query(...),
     end_date: date = Query(...)
 ):
@@ -362,7 +364,7 @@ async def get_planned_outfits(
 async def update_planned_outfit(
     planned_id: UUID,
     body: UpdatePlannedOutfitRequest,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """Edit a planned outfit — change items, mark as worn/skipped, etc."""
     updates = {}
@@ -397,7 +399,7 @@ async def update_planned_outfit(
 
 
 @router.delete("/planner/{planned_id}", response_model=SuccessResponse)
-async def delete_planned_outfit(planned_id: UUID, user_id: UUID = Query(...)):
+async def delete_planned_outfit(planned_id: UUID, user_id: UUID = Depends(get_current_user_id)):
     """Remove a planned outfit"""
     logger.info(f"Delete planned outfit={planned_id} user={user_id}")
 
