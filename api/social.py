@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from uuid import UUID
 from shared.logger import get_logger
 from shared.models.responses import SuccessResponse
@@ -6,6 +6,8 @@ from shared.exceptions import FitCheckException
 from core.storage.supabase_client import supabase
 from pydantic import BaseModel
 from typing import Literal
+from shared.dependencies import get_current_user_id
+
 
 
 logger = get_logger(__name__)
@@ -26,7 +28,7 @@ async def health():
 @router.post("/follow/{target_user_id}", response_model=SuccessResponse)
 async def follow_user(
     target_user_id: UUID,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """Follow another user"""
     if str(target_user_id) == str(user_id):
@@ -84,7 +86,7 @@ async def follow_user(
 @router.delete("/follow/{target_user_id}", response_model=SuccessResponse)
 async def unfollow_user(
     target_user_id: UUID,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """Unfollow a user"""
     logger.info(f"Unfollow — follower={user_id} following={target_user_id}")
@@ -106,7 +108,7 @@ async def unfollow_user(
 
 @router.get("/followers", response_model=SuccessResponse)
 async def get_followers(
-    user_id: UUID = Query(...),
+    user_id: UUID = Depends(get_current_user_id),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0)
 ):
@@ -132,7 +134,7 @@ async def get_followers(
 
 @router.get("/following", response_model=SuccessResponse)
 async def get_following(
-    user_id: UUID = Query(...),
+    user_id: UUID = Depends(get_current_user_id),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0)
 ):
@@ -176,7 +178,7 @@ def _get_follow_counts(user_id: str) -> dict:
 async def react_to_outfit(
     outfit_id: UUID,
     body: ReactRequest,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """Add or update a reaction on an outfit. One reaction per user per outfit."""
     if body.reaction not in VALID_REACTIONS:
@@ -223,7 +225,7 @@ async def react_to_outfit(
 @router.delete("/reactions/{outfit_id}", response_model=SuccessResponse)
 async def remove_reaction(
     outfit_id: UUID,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """Remove your reaction from an outfit"""
     logger.info(f"Remove reaction — outfit={outfit_id} user={user_id}")
@@ -246,7 +248,7 @@ async def remove_reaction(
 @router.get("/reactions/{outfit_id}", response_model=SuccessResponse)
 async def get_reactions(
     outfit_id: UUID,
-    user_id: UUID | None = Query(None)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """
     Get reaction counts for an outfit. If user_id is provided,
@@ -290,7 +292,7 @@ def _get_reaction_counts(outfit_id: str) -> dict:
 
 @router.get("/feed", response_model=SuccessResponse)
 async def get_discover_feed(
-    user_id: UUID = Query(...),
+    user_id: UUID = Depends(get_current_user_id),
     sort: Literal["recent", "popular", "following"] = Query("recent"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0)
@@ -336,13 +338,7 @@ async def get_discover_feed(
 
         if sort == "recent":
             query = query.order("created_at", desc=True)
-        # TODO: Popular sorting is performed after pagination (see below).
-        # This is acceptable for MVP datasets — with few outfits, sorting
-        # a single fetched page is effectively correct. Replace with SQL
-        # aggregation or a denormalized total_reactions column ordered at
-        # the database level once the feed grows enough that popularity
-        # ordering could miss high-reaction outfits outside the fetched page.
-
+        
     result = query.execute()
     outfits = result.data or []
     total = result.count or 0
@@ -389,7 +385,7 @@ def _get_bulk_reaction_counts(outfit_ids: list[str]) -> dict[str, dict]:
 @router.post("/save/{outfit_id}", response_model=SuccessResponse)
 async def save_outfit_bookmark(
     outfit_id: UUID,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """Bookmark an outfit for later"""
     logger.info(f"Save outfit — outfit={outfit_id} user={user_id}")
@@ -432,7 +428,7 @@ async def save_outfit_bookmark(
 @router.delete("/save/{outfit_id}", response_model=SuccessResponse)
 async def remove_saved_outfit(
     outfit_id: UUID,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """Remove a bookmarked outfit"""
     logger.info(f"Unsave outfit — outfit={outfit_id} user={user_id}")
@@ -448,7 +444,7 @@ async def remove_saved_outfit(
 
 @router.get("/saved", response_model=SuccessResponse)
 async def get_saved_outfits(
-    user_id: UUID = Query(...),
+    user_id: UUID = Depends(get_current_user_id),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0)
 ):

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request,Depends
+from shared.dependencies import get_current_user_id
 from uuid import UUID
 from shared.logger import get_logger
 from shared.models.responses import SuccessResponse
@@ -22,21 +23,21 @@ async def health():
 
 
 @router.post("/checkout", response_model=SuccessResponse)
-async def create_checkout(user_id: UUID = Query(...)):
+async def create_checkout(user_id: UUID = Depends(get_current_user_id)):
     """Start a Stripe Checkout session for premium subscription."""
     checkout_url = await start_checkout(str(user_id))
     return SuccessResponse(data={"checkout_url": checkout_url})
 
 
 @router.get("/me", response_model=SuccessResponse)
-async def get_my_subscription(user_id: UUID = Query(...)):
+async def get_my_subscription(user_id: UUID = Depends(get_current_user_id)):
     """Get current subscription status."""
     status = await get_subscription_status(str(user_id))
     return SuccessResponse(data=status)
 
 
 @router.post("/cancel", response_model=SuccessResponse)
-async def cancel_subscription(user_id: UUID = Query(...)):
+async def cancel_subscription(user_id: UUID = Depends(get_current_user_id)):
     """Cancel subscription — takes effect at end of billing period."""
     result = await cancel_user_subscription(str(user_id))
     return SuccessResponse(data=result)

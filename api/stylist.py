@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
+from shared.dependencies import get_current_user_id
 from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import datetime, UTC
@@ -37,7 +38,7 @@ async def health():
 @router.post("/generate", response_model=SuccessResponse)
 async def generate_outfit_suggestions(
     body: GenerateRequest,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """
     Fast, instant outfit generation — no AI call.
@@ -67,7 +68,7 @@ async def generate_outfit_suggestions(
 @router.post("/dress-me-for-this", response_model=SuccessResponse)
 async def dress_me_for_this(
     body: DressMeForThisRequest,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     """
     Text input → GPT extracts occasion/mood → same stylist pipeline
