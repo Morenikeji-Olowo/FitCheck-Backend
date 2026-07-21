@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Form, Query
+from fastapi import APIRouter, UploadFile, File, Form, Query, Depends
 from pydantic import BaseModel
 from uuid import UUID
 from shared.logger import get_logger
@@ -7,6 +7,8 @@ from shared.exceptions import AvatarNotFoundError
 from core.storage.supabase_client import supabase
 from core.storage.s3 import storage
 from pipelines.avatar_pipeline import run_avatar_pipeline
+from shared.dependencies import get_current_user_id
+
 
 logger = get_logger(__name__)
 
@@ -29,7 +31,7 @@ async def health():
 @router.post("/upload", response_model=SuccessResponse)
 async def upload_avatar(
     file: UploadFile = File(...),
-    user_id: UUID = Form(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     logger.info(f"Avatar upload — user={user_id}")
     profile = await run_avatar_pipeline(file=file, user_id=str(user_id))
@@ -37,7 +39,7 @@ async def upload_avatar(
 
 
 @router.get("/me", response_model=SuccessResponse)
-async def get_my_avatar(user_id: UUID = Query(...)):
+async def get_my_avatar(user_id: UUID = Depends(get_current_user_id)):
     logger.info(f"Get avatar — user={user_id}")
 
     result = supabase.table("avatars")\
@@ -55,7 +57,7 @@ async def get_my_avatar(user_id: UUID = Query(...)):
 @router.put("/me", response_model=SuccessResponse)
 async def update_avatar(
     body: UpdateAvatarRequest,
-    user_id: UUID = Query(...)
+    user_id: UUID = Depends(get_current_user_id)
 ):
     logger.info(f"Update avatar — user={user_id}")
 
@@ -76,7 +78,7 @@ async def update_avatar(
 
 
 @router.delete("/me", response_model=SuccessResponse)
-async def delete_avatar(user_id: UUID = Query(...)):
+async def delete_avatar(user_id: UUID = Depends(get_current_user_id)):
     logger.info(f"Delete avatar — user={user_id}")
 
     result = supabase.table("avatars")\
@@ -90,7 +92,6 @@ async def delete_avatar(user_id: UUID = Query(...)):
 
     avatar = result.data
 
-    # Delete database first — S3 cleanup second
     supabase.table("avatars")\
         .delete()\
         .eq("user_id", str(user_id))\
