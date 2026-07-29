@@ -9,6 +9,7 @@ class StyleProfile(BaseModel):
     preferred_colors: list[str] = []
     disliked_colors: list[str] = []
     favorite_occasions: list[str] = []
+    self_reported_body_shape: str | None = None
     onboarding_completed: bool = False
 
 
@@ -17,4 +18,5 @@ class UpdateStyleProfileRequest(BaseModel):
     preferred_colors: list[str] | None = None
     disliked_colors: list[str] | None = None
     favorite_occasions: list[str] | None = None
+    self_reported_body_shape: str | None = None
     onboarding_completed: bool | None = None

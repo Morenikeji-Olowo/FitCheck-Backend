@@ -35,6 +35,7 @@ async def create_style_profile(
         "preferred_colors": profile.preferred_colors,
         "disliked_colors": profile.disliked_colors,
         "favorite_occasions": profile.favorite_occasions,
+        "self_reported_body_shape": profile.self_reported_body_shape,
         "onboarding_completed": True
     }
 
@@ -70,13 +71,14 @@ async def get_my_style_profile(user_id: UUID = Depends(get_current_user_id)):
             "preferred_colors": [],
             "disliked_colors": [],
             "favorite_occasions": [],
+            "self_reported_body_shape": None,
             "onboarding_completed": False
         })
 
     return SuccessResponse(data=result.data)
 
 
-@router.put("/me", response_model=SuccessResponse)
+@router.patch("/me", response_model=SuccessResponse)
 async def update_style_profile(
     body: UpdateStyleProfileRequest,
     user_id: UUID = Depends(get_current_user_id)
