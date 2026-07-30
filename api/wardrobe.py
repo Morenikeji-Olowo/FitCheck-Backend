@@ -11,6 +11,7 @@ from core.storage.supabase_client import supabase
 from core.storage.s3 import storage
 from pipelines.wardrobe_pipeline import run_wardrobe_pipeline
 from shared.dependencies import get_current_user_id
+from shared.models.clothing import ClothingItem
 
 logger = get_logger(__name__)
 
@@ -104,9 +105,9 @@ async def get_wardrobe(
 
     result = query.execute()
     total = result.count or 0
-
+    items = [ClothingItem(**row).model_dump(mode="json") for row in result.data]
     return SuccessResponse(data={
-        "items": result.data,
+        "items": items,
         "pagination": {
             "total": total,
             "limit": limit,
@@ -133,7 +134,8 @@ async def get_wardrobe_item(item_id: UUID, user_id: UUID = Depends(get_current_u
     if not result.data:
         raise ClothingItemNotFoundError()
 
-    return SuccessResponse(data=result.data)
+    item = ClothingItem(**result.data).model_dump(mode="json")
+    return SuccessResponse(data=item)
 
 
 @router.patch("/{item_id}", response_model=SuccessResponse)
@@ -158,8 +160,13 @@ async def update_wardrobe_item(
         .eq("item_id", str(item_id))\
         .eq("user_id", str(user_id))\
         .execute()
+    
+    if not result.data:
+        raise ClothingItemNotFoundError()
 
-    return SuccessResponse(data=result.data[0] if result.data else {})
+    item = ClothingItem(**result.data[0]).model_dump(mode="json")
+    return SuccessResponse(data=item)
+
 
 
 @router.delete("/{item_id}", response_model=SuccessResponse)
@@ -200,9 +207,6 @@ async def delete_wardrobe_item(item_id: UUID, user_id: UUID = Depends(get_curren
 
 @router.patch("/{item_id}/favorite", response_model=SuccessResponse)
 async def toggle_favorite(item_id: UUID, user_id: UUID = Depends(get_current_user_id)):
-    """Toggle favorite status"""
-    logger.info(f"Toggle favorite item={item_id} user={user_id}")
-
     result = supabase.table("closet_items")\
         .select("favorite")\
         .eq("item_id", str(item_id))\
@@ -222,7 +226,6 @@ async def toggle_favorite(item_id: UUID, user_id: UUID = Depends(get_current_use
         .execute()
 
     return SuccessResponse(data={"item_id": str(item_id), "favorite": new_status})
-
 
 @router.patch("/{item_id}/worn", response_model=SuccessResponse)
 async def log_worn(item_id: UUID, user_id: UUID = Depends(get_current_user_id)):
