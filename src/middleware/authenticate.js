@@ -16,8 +16,7 @@ export const authenticate = async (req, res, next) => {
         return next();
       }
     } catch (err) {
-      // Redis read failed — fall through to Supabase verification below
-      // instead of failing the request outright.
+      // Redis read failed — fall through to Supabase verification below.
     }
 
     const { data, error } = await supabase.auth.getUser(token);
@@ -34,10 +33,14 @@ export const authenticate = async (req, res, next) => {
 
     req.user = { ...data.user, ...profile };
 
-    await redis.set(`session:${token}`, JSON.stringify(req.user), { ex: 900 });
+    try {
+      await redis.set(`session:${token}`, JSON.stringify(req.user), { ex: 900 });
+    } catch (err) {
 
+    }
     next();
   } catch (error) {
+    console.error('AUTH MIDDLEWARE ERROR:', error);
     res.status(401).json({ error: 'Authentication failed' });
   }
 };
