@@ -12,6 +12,7 @@ from core.storage.s3 import storage
 from pipelines.wardrobe_pipeline import run_wardrobe_pipeline
 from shared.dependencies import get_current_user_id
 from shared.models.clothing import ClothingItem
+from core.constants.wardrobe_select import WARDROBE_ITEM_SELECT
 
 logger = get_logger(__name__)
 
@@ -81,8 +82,8 @@ async def get_wardrobe(
     logger.info(f"Get wardrobe user={user_id} category={category} search={search}")
 
     query = supabase.table("closet_items")\
-        .select("*", count="exact")\
-        .eq("user_id", str(user_id))
+    .select(WARDROBE_ITEM_SELECT, count="exact")\
+    .eq("user_id", str(user_id))
 
     if category:
         query = query.eq("category", category.value)
@@ -125,11 +126,11 @@ async def get_wardrobe_item(item_id: UUID, user_id: UUID = Depends(get_current_u
     logger.info(f"Get item={item_id} user={user_id}")
 
     result = supabase.table("closet_items")\
-        .select("*")\
-        .eq("item_id", str(item_id))\
-        .eq("user_id", str(user_id))\
-        .single()\
-        .execute()
+    .select(WARDROBE_ITEM_SELECT)\
+    .eq("item_id", str(item_id))\
+    .eq("user_id", str(user_id))\
+    .single()\
+    .execute()
 
     if not result.data:
         raise ClothingItemNotFoundError()

@@ -307,7 +307,7 @@ async def get_discover_feed(
 
     feed_fields = (
         "outfit_id, user_id, overall_score, overall_grade, "
-        "item_ids, occasion, name, created_at"
+        "item_ids, occasion, name, created_at, is_public"
     )
 
     if sort == "following":
@@ -338,18 +338,49 @@ async def get_discover_feed(
 
         if sort == "recent":
             query = query.order("created_at", desc=True)
-        
+
     result = query.execute()
     outfits = result.data or []
     total = result.count or 0
 
     outfit_ids = [o["outfit_id"] for o in outfits]
+    creator_ids = list({o["user_id"] for o in outfits})
+    all_item_ids = list({item_id for o in outfits for item_id in (o.get("item_ids") or [])})
+
     reaction_counts_by_outfit = _get_bulk_reaction_counts(outfit_ids)
+    creator_profiles = _get_bulk_creator_profiles(creator_ids)
+    cover_images_by_outfit_items = _get_bulk_item_images(all_item_ids)
+    my_reactions = _get_bulk_my_reactions(outfit_ids, str(user_id))
+    my_saved = _get_bulk_saved_status(outfit_ids, str(user_id))
+    my_following = _get_bulk_following_status(creator_ids, str(user_id))
 
     for outfit in outfits:
-        counts = reaction_counts_by_outfit.get(outfit["outfit_id"], {"fire": 0, "clean": 0, "bold": 0})
+        oid = outfit["outfit_id"]
+        creator_id = outfit["user_id"]
+
+        counts = reaction_counts_by_outfit.get(oid, {"fire": 0, "clean": 0, "bold": 0})
         outfit["reaction_counts"] = counts
         outfit["total_reactions"] = sum(counts.values())
+
+        outfit["creator"] = creator_profiles.get(creator_id, {
+            "user_id": creator_id, "display_name": None, "avatar_url": None
+        })
+
+        item_ids = outfit.get("item_ids") or []
+        outfit["cover_images"] = [
+            cover_images_by_outfit_items[iid]
+            for iid in item_ids[:2]
+            if iid in cover_images_by_outfit_items
+        ]
+        outfit["image_count"] = len(item_ids)
+
+        outfit["my_reaction"] = my_reactions.get(oid)
+        outfit["is_saved"] = oid in my_saved
+        outfit["is_following_creator"] = creator_id in my_following
+        outfit["is_mine"] = creator_id == str(user_id)
+
+        outfit["comment_count"] = 0   # stub — no comments feature built yet
+        outfit["share_count"] = 0     # stub — no share tracking built yet
 
     if sort == "popular":
         outfits.sort(key=lambda o: o["total_reactions"], reverse=True)
@@ -361,7 +392,6 @@ async def get_discover_feed(
             "has_more": (offset + limit) < total
         }
     })
-
 def _get_bulk_reaction_counts(outfit_ids: list[str]) -> dict[str, dict]:
     """Fetch reaction counts for multiple outfits in one query, grouped by outfit_id."""
     if not outfit_ids:
@@ -381,7 +411,98 @@ def _get_bulk_reaction_counts(outfit_ids: list[str]) -> dict[str, dict]:
             counts_by_outfit[oid][r] += 1
 
     return counts_by_outfit
+def _get_bulk_creator_profiles(user_ids: list[str]) -> dict[str, dict]:
+    """
+    Fetch creator display info in one bulk query. Only pulls fields
+    confirmed to exist on `profiles` (id, full_name) — avatar comes
+    from a separate bulk query against `avatars`, not assumed to
+    live on profiles.
+    """
+    if not user_ids:
+        return {}
 
+    profiles_result = supabase.table("profiles")\
+        .select("id, full_name")\
+        .in_("id", user_ids)\
+        .execute()
+
+    avatars_result = supabase.table("avatars")\
+        .select("user_id, processed_photo_url")\
+        .in_("user_id", user_ids)\
+        .execute()
+
+    avatar_by_user = {
+        row["user_id"]: row.get("processed_photo_url")
+        for row in (avatars_result.data or [])
+    }
+
+    creators = {}
+    for row in (profiles_result.data or []):
+        uid = row["id"]
+        creators[uid] = {
+            "user_id": uid,
+            "display_name": row.get("full_name"),
+            "avatar_url": avatar_by_user.get(uid)
+        }
+
+    return creators
+
+def _get_bulk_item_images(item_ids: list[str]) -> dict[str, str]:
+    """Fetch clean_image_url for multiple wardrobe items in one query."""
+    if not item_ids:
+        return {}
+
+    result = supabase.table("closet_items")\
+        .select("item_id, clean_image_url")\
+        .in_("item_id", item_ids)\
+        .execute()
+
+    return {
+        row["item_id"]: row["clean_image_url"]
+        for row in (result.data or [])
+    }
+
+
+def _get_bulk_my_reactions(outfit_ids: list[str], user_id: str) -> dict[str, str]:
+    """Fetch the current user's reaction (if any) on each outfit in one query."""
+    if not outfit_ids:
+        return {}
+
+    result = supabase.table("outfit_reactions")\
+        .select("outfit_id, reaction")\
+        .eq("user_id", user_id)\
+        .in_("outfit_id", outfit_ids)\
+        .execute()
+
+    return {row["outfit_id"]: row["reaction"] for row in (result.data or [])}
+
+
+def _get_bulk_saved_status(outfit_ids: list[str], user_id: str) -> set[str]:
+    """Fetch which of these outfits the current user has bookmarked, in one query."""
+    if not outfit_ids:
+        return set()
+
+    result = supabase.table("saved_outfits")\
+        .select("outfit_id")\
+        .eq("user_id", user_id)\
+        .in_("outfit_id", outfit_ids)\
+        .execute()
+
+    return {row["outfit_id"] for row in (result.data or [])}
+
+
+def _get_bulk_following_status(creator_ids: list[str], user_id: str) -> set[str]:
+    """Fetch which of these creators the current user follows, in one query."""
+    if not creator_ids:
+        return set()
+
+    result = supabase.table("follows")\
+        .select("following_id")\
+        .eq("follower_id", user_id)\
+        .in_("following_id", creator_ids)\
+        .execute()
+
+    return {row["following_id"] for row in (result.data or [])}
 @router.post("/save/{outfit_id}", response_model=SuccessResponse)
 async def save_outfit_bookmark(
     outfit_id: UUID,

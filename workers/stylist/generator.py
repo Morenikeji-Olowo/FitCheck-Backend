@@ -1,9 +1,11 @@
+import random
+import hashlib
+from datetime import datetime, UTC
 from shared.logger import get_logger
 from workers.outfit.compatibility import calculate_compatibility
 from workers.outfit.validator import validate_outfit_composition
 from shared.exceptions import FitCheckException
-import random
-
+from core.config.settings import settings
 
 logger = get_logger(__name__)
 
@@ -23,19 +25,19 @@ def generate_outfits(
     mood: str | None = None,
     weather: dict | None = None,
     excluded_item_ids: list[str] | None = None,
-    max_results: int = 3
+    max_results: int = 3,
+    user_id: str | None = None
 ) -> list[dict]:
-    """
-    Generates and ranks candidate outfits from a user's wardrobe.
-    Assumes caller has already confirmed wardrobe viability via
-    analyze_wardrobe() in wardrobe_validator.py. Pure logic —
-    no AI call, no database access.
-    """
     excluded = set(excluded_item_ids or [])
     logger.info(
         "Generating outfits — occasion=%s mood=%s items_available=%d",
         occasion, mood, len(wardrobe_items)
     )
+
+    # Create ONE seeded RNG at the start, shared across the whole pipeline
+    seed_key = f"{user_id or 'anon'}-{datetime.now(UTC).date().isoformat()}"
+    seed = int(hashlib.sha256(seed_key.encode()).hexdigest(), 16) % (2**32)
+    rng = random.Random(seed)
 
     pool = [
         item for item in wardrobe_items
@@ -50,7 +52,7 @@ def generate_outfits(
         pool = _prioritize_by_mood(pool, mood)
 
     by_category = _group_by_category(pool)
-    by_category = _prune_categories(by_category)
+    by_category = _prune_categories(by_category, rng)   # ← pass rng in
     candidates = _build_candidates(by_category)
 
     scored = []
@@ -61,20 +63,24 @@ def generate_outfits(
             continue
 
         scores = calculate_compatibility(candidate_items)
+        compatibility_score = scores["overall_score"]
+        rotation_score = _calculate_rotation_score(candidate_items)
+        final_rank_score = compatibility_score + rotation_score
+
         scored.append({
             "item_ids": [item["item_id"] for item in candidate_items],
             "items": candidate_items,
-            "score": scores["overall_score"],
+            "score": compatibility_score,
             "grade": scores["overall_grade"],
             "strengths": scores["strengths"],
             "warnings": scores["warnings"],
-            "reason": _build_reason(scores, mood)
+            "reason": _build_reason(scores, mood),
+            "_compatibility_score": compatibility_score,
+            "_rotation_score": rotation_score,
+            "_final_rank_score": final_rank_score,
         })
 
-    scored.sort(key=lambda x: x["score"], reverse=True)
-    top_results = scored[:max_results]
-
-    if not top_results:
+    if not scored:
         logger.warning("No valid outfit candidates survived scoring")
         raise FitCheckException(
             "We couldn't put together an outfit for this occasion right now. "
@@ -82,12 +88,117 @@ def generate_outfits(
             code="NO_VALID_COMBINATION", status_code=400
         )
 
+    top_results = _select_from_elite_cluster(scored, max_results, rng)   # ← pass rng, not user_id
+
+    for r in top_results:
+        r.pop("_compatibility_score", None)
+        r.pop("_rotation_score", None)
+        r.pop("_final_rank_score", None)
+
     logger.info(
         "Generated %d candidates, returning top %d — best score=%s",
         len(scored), len(top_results), top_results[0]["score"]
     )
 
     return top_results
+
+
+def _prune_categories(by_category: dict[str, list[dict]], rng: random.Random) -> dict[str, list[dict]]:
+    pruned = {}
+    for cat, items in by_category.items():
+        shuffled = items[:]
+        rng.shuffle(shuffled)   # ← seeded rng, not global random
+        sorted_items = sorted(
+            shuffled,
+            key=lambda i: (
+                not i.get("favorite", False),
+                i.get("times_worn", 0)
+            )
+        )
+        pruned[cat] = sorted_items[:MAX_ITEMS_PER_CATEGORY]
+    return pruned
+
+
+def _select_from_elite_cluster(
+    scored: list[dict],
+    max_results: int,
+    rng: random.Random
+) -> list[dict]:
+    scored.sort(key=lambda x: x["_final_rank_score"], reverse=True)
+
+    if not scored:
+        return []
+
+    top_score = scored[0]["_final_rank_score"]
+    band = settings.ROTATION_SCORE_BAND
+
+    elite_cluster = [c for c in scored if top_score - c["_final_rank_score"] <= band]
+    remainder = [c for c in scored if c not in elite_cluster]
+
+    rng.shuffle(elite_cluster)   # ← same rng instance as _prune_categories used
+
+    ordered = elite_cluster + remainder
+    return ordered[:max_results]
+
+def _calculate_rotation_score(items: list[dict]) -> float:
+    """
+    A SEPARATE signal from compatibility — never mixed into the
+    score shown to the user. Uses only confirmed-real fields
+    (favorite, times_worn, last_worn), no new backend data required.
+    """
+    adjustment = 0.0
+
+    for item in items:
+        if item.get("favorite"):
+            adjustment += settings.FAVORITE_BONUS
+
+        times_worn = item.get("times_worn") or 0
+        adjustment -= min(times_worn * settings.TIMES_WORN_WEIGHT, 10)
+
+        last_worn = item.get("last_worn")
+        if last_worn:
+            try:
+                worn_dt = datetime.fromisoformat(last_worn.replace("Z", "+00:00"))
+                days_since = (datetime.now(UTC) - worn_dt).days
+                if days_since < settings.RECENTLY_WORN_DAYS:
+                    adjustment -= settings.ROTATION_PENALTY
+            except (ValueError, TypeError):
+                pass
+
+    return adjustment
+
+
+# def _select_from_elite_cluster(
+#     scored: list[dict],
+#     max_results: int,
+#     user_id: str | None
+# ) -> list[dict]:
+#     """
+#     Ranks by final_rank_score (compatibility + rotation combined),
+#     then clusters every candidate within ROTATION_SCORE_BAND points
+#     of the top result — randomizing ONLY within that elite cluster,
+#     never selecting a meaningfully worse outfit. Randomness is seeded
+#     per-user-per-day so repeated calls today return the same result.
+#     """
+#     scored.sort(key=lambda x: x["_final_rank_score"], reverse=True)
+
+#     if not scored:
+#         return []
+
+#     top_score = scored[0]["_final_rank_score"]
+#     band = settings.ROTATION_SCORE_BAND
+
+#     elite_cluster = [c for c in scored if top_score - c["_final_rank_score"] <= band]
+#     remainder = [c for c in scored if c not in elite_cluster]
+
+#     seed_key = f"{user_id or 'anon'}-{datetime.now(UTC).date().isoformat()}"
+#     seed = int(hashlib.sha256(seed_key.encode()).hexdigest(), 16) % (2**32)
+#     rng = random.Random(seed)
+
+#     rng.shuffle(elite_cluster)
+
+#     ordered = elite_cluster + remainder
+#     return ordered[:max_results]
 
 
 def _group_by_category(items: list[dict]) -> dict[str, list[dict]]:
@@ -98,32 +209,23 @@ def _group_by_category(items: list[dict]) -> dict[str, list[dict]]:
     return grouped
 
 
-def _prune_categories(by_category: dict[str, list[dict]]) -> dict[str, list[dict]]:
-    """
-    Caps items per category before combining. Favorites come first,
-    then prefer less-recently-worn items so recommendations rotate
-    instead of always surfacing the same pieces. Small shuffle within
-    equal-priority groups avoids identical daily outfits.
-    """
-    pruned = {}
-    for cat, items in by_category.items():
-        shuffled = items[:]
-        random.shuffle(shuffled)  # break ties randomly before sorting
-        sorted_items = sorted(
-            shuffled,
-            key=lambda i: (
-                not i.get("favorite", False),   # favorites first (False sorts before True)
-                i.get("times_worn", 0)          # ascending — less-worn items surface more
-            )
-        )
-        pruned[cat] = sorted_items[:MAX_ITEMS_PER_CATEGORY]
-    return pruned
+# def _prune_categories(by_category: dict[str, list[dict]]) -> dict[str, list[dict]]:
+#     pruned = {}
+#     for cat, items in by_category.items():
+#         shuffled = items[:]
+#         random.shuffle(shuffled)
+#         sorted_items = sorted(
+#             shuffled,
+#             key=lambda i: (
+#                 not i.get("favorite", False),
+#                 i.get("times_worn", 0)
+#             )
+#         )
+#         pruned[cat] = sorted_items[:MAX_ITEMS_PER_CATEGORY]
+#     return pruned
 
 
 def _build_candidates(by_category: dict[str, list[dict]]) -> list[list[dict]]:
-    # TODO Phase 6.2 — add accessories (bags, jewellery, headwear, 
-    # belts) layered onto base outfit after generation, once 
-    # include_accessories flag exists per backlog entry
     from itertools import product
     candidates = []
     shoes = by_category.get("shoes") or [None]
@@ -141,6 +243,7 @@ def _build_candidates(by_category: dict[str, list[dict]]) -> list[list[dict]]:
             candidates.append(combo)
 
     return candidates
+
 
 def _filter_by_weather(items: list[dict], weather: dict) -> list[dict]:
     temp = weather.get("temp_celsius")
@@ -160,15 +263,9 @@ def _filter_by_weather(items: list[dict], weather: dict) -> list[dict]:
 
 
 def _prioritize_by_mood(items: list[dict], mood: str) -> list[dict]:
-    """
-    Mood biases ordering so preferred-style items are considered
-    first when pruning/building candidates — never discards items,
-    just reshuffles priority.
-    """
     preferred_styles = MOOD_STYLE_PRIORITY.get(mood.lower())
     if not preferred_styles:
         return items
-
     preferred = [item for item in items if item.get("style") in preferred_styles]
     others = [item for item in items if item.get("style") not in preferred_styles]
     return preferred + others

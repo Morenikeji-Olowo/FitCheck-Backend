@@ -67,6 +67,12 @@ class Settings:
         self.OCCASION_WEIGHT = float(os.getenv("OCCASION_WEIGHT", 0.15))
         self.SEASON_WEIGHT = float(os.getenv("SEASON_WEIGHT", 0.15))
         
+        self.RECENTLY_WORN_DAYS = int(os.getenv("RECENTLY_WORN_DAYS", 3))
+        self.ROTATION_PENALTY = float(os.getenv("ROTATION_PENALTY", 8))
+        self.FAVORITE_BONUS = float(os.getenv("FAVORITE_BONUS", 3))
+        self.TIMES_WORN_WEIGHT = float(os.getenv("TIMES_WORN_WEIGHT", 1.5))
+        self.ROTATION_SCORE_BAND = float(os.getenv("ROTATION_SCORE_BAND", 3))
+        
         required = {
         "OPENAI_API_KEY": self.OPENAI_API_KEY,
         "AWS_BUCKET_NAME": self.AWS_BUCKET_NAME,

@@ -4,6 +4,7 @@ from core.storage.supabase_client import supabase
 from core.weather.client import weather_client
 from workers.stylist.generator import generate_outfits
 from workers.stylist.wardrobe_validator import analyze_wardrobe
+from core.constants.wardrobe_select import WARDROBE_ITEM_SELECT
 
 logger = get_logger(__name__)
 
@@ -21,9 +22,6 @@ async def run_stylist_pipeline(
     Orchestrates the full recommendation flow:
     Weather → Wardrobe fetch → Wardrobe validation → 
     Generator → Compatibility scoring → Top results.
-
-    Business logic only — returns data on success, raises
-    FitCheckException on failure. API layer decides HTTP response.
     """
     logger.info(
         "Stylist pipeline started — user=%s occasion=%s mood=%s",
@@ -33,9 +31,7 @@ async def run_stylist_pipeline(
     weather = await weather_client.get_weather(latitude, longitude)
 
     wardrobe_result = supabase.table("closet_items")\
-        .select("item_id, category, item_type, dominant_color, dominant_hex, "
-                "clean_image_url, pattern, style, occasions, seasons, "
-                "favorite, times_worn")\
+        .select(WARDROBE_ITEM_SELECT)\
         .eq("user_id", user_id)\
         .eq("is_archived", False)\
         .execute()
@@ -63,8 +59,9 @@ async def run_stylist_pipeline(
         mood=mood,
         weather=weather,
         excluded_item_ids=excluded_item_ids,
-        max_results=max_results
-    )
+        max_results=max_results,
+        user_id=user_id
+)
 
     logger.info(
         "Stylist pipeline complete — user=%s outfits=%d weather_used=%s",

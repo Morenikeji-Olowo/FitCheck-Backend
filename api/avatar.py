@@ -34,8 +34,8 @@ async def upload_avatar(
     user_id: UUID = Depends(get_current_user_id)
 ):
     logger.info(f"Avatar upload — user={user_id}")
-    profile = await run_avatar_pipeline(file=file, user_id=str(user_id))
-    return SuccessResponse(data=profile.model_dump(mode="json"))
+    saved_avatar = await run_avatar_pipeline(file=file, user_id=str(user_id))
+    return SuccessResponse(data=saved_avatar)
 
 
 @router.get("/me", response_model=SuccessResponse)
@@ -45,14 +45,13 @@ async def get_my_avatar(user_id: UUID = Depends(get_current_user_id)):
     result = supabase.table("avatars")\
         .select("*")\
         .eq("user_id", str(user_id))\
-        .single()\
+        .maybe_single()\
         .execute()
 
-    if not result.data:
+    if not result or not result.data:
         raise AvatarNotFoundError()
 
     return SuccessResponse(data=result.data)
-
 
 @router.put("/me", response_model=SuccessResponse)
 async def update_avatar(

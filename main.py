@@ -60,3 +60,4 @@ app.include_router(subscription_router, prefix="/api")
 @app.get("/")
 def health_check():
     return { "status": "FitCheck AI service is running" }
+

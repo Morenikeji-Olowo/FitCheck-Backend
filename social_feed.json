@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "data": {
+    "outfits": [
+      {
+        "outfit_id": "61857e62-3af3-4a85-8f41-474e77f19062",
+        "user_id": "15bacab3-5873-401b-9c9a-52f8b3eeeaf7",
+        "overall_score": 78,
+        "overall_grade": "C",
+        "item_ids": [
+          "133d2a4a-be16-4064-b57b-05cb0252e811",
+          "3e1682d4-9a10-4304-b080-cef72dce1fe6"
+        ],
+        "occasion": "everyday",
+        "name": "Reaction Test",
+        "created_at": "2026-07-19T21:54:45.122713+00:00",
+        "reaction_counts": { "fire": 1, "clean": 0, "bold": 0 },
+        "total_reactions": 1
+      }
+    ],
+    "pagination": { "total": 1, "limit": 20, "offset": 0, "has_more": false }
+  }
+}

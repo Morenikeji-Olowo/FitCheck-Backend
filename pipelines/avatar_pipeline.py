@@ -91,12 +91,12 @@ async def run_avatar_pipeline(
         )
 
         # 10. Save to Supabase
-        save_avatar(
-            profile=profile,
-            body_profile_ai=body_profile_ai,
-            photo_width=photo_width,
-            photo_height=photo_height
-        )
+        saved_avatar = save_avatar(
+        profile=profile,
+        body_profile_ai=body_profile_ai,
+        photo_width=photo_width,
+        photo_height=photo_height
+    )
         logger.info("Step 7/7 — Avatar saved to database")
 
         # 11. Delete old S3 images after successful save
@@ -109,7 +109,7 @@ async def run_avatar_pipeline(
             body_profile.body_shape.value
         )
 
-        return profile
+        return saved_avatar
 
     except Exception as e:
         logger.exception("Avatar pipeline failed")
