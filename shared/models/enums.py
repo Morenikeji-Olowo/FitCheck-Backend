@@ -113,3 +113,13 @@ class OutfitMood(str, Enum):
     DATE = "date"
     SPORTY = "sporty"
     CREATIVE = "creative"
+class DiscoverCategory(str, Enum):
+    EDITORIAL = "editorial"
+    STREETWEAR = "streetwear"
+    MINIMAL = "minimal"
+    FORMAL = "formal"
+    VINTAGE = "vintage"
+    AFROCENTRIC = "afrocentric"
+    DATE_NIGHT = "date_night"
+    Y2K_REVIVAL = "y2k_revival"
+    FESTIVAL = "festival"

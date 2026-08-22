@@ -122,22 +122,18 @@ async def get_wardrobe(
 
 @router.get("/{item_id}", response_model=SuccessResponse)
 async def get_wardrobe_item(item_id: UUID, user_id: UUID = Depends(get_current_user_id)):
-    """Get single closet item by ID"""
-    logger.info(f"Get item={item_id} user={user_id}")
-
     result = supabase.table("closet_items")\
-    .select(WARDROBE_ITEM_SELECT)\
-    .eq("item_id", str(item_id))\
-    .eq("user_id", str(user_id))\
-    .single()\
-    .execute()
+        .select(WARDROBE_ITEM_SELECT)\
+        .eq("item_id", str(item_id))\
+        .eq("user_id", str(user_id))\
+        .maybe_single()\
+        .execute()
 
-    if not result.data:
+    if not result or not result.data:
         raise ClothingItemNotFoundError()
 
     item = ClothingItem(**result.data).model_dump(mode="json")
     return SuccessResponse(data=item)
-
 
 @router.patch("/{item_id}", response_model=SuccessResponse)
 async def update_wardrobe_item(

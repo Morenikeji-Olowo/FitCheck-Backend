@@ -1,7 +1,1 @@
-{
-  "success": true,
-  "data": {
-    "followers": [],
-    "pagination": { "total": 0, "limit": 20, "offset": 0, "has_more": false }
-  }
-}
+{"success":true,"data":{"followers":[],"pagination":{"total":0,"limit":20,"offset":0,"has_more":false}}}

@@ -7,6 +7,7 @@ from core.storage.supabase_client import supabase
 from pydantic import BaseModel
 from typing import Literal
 from shared.dependencies import get_current_user_id
+from shared.models.enums import DiscoverCategory
 
 
 
@@ -294,6 +295,7 @@ def _get_reaction_counts(outfit_id: str) -> dict:
 async def get_discover_feed(
     user_id: UUID = Depends(get_current_user_id),
     sort: Literal["recent", "popular", "following"] = Query("recent"),
+    category: DiscoverCategory | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0)
 ):
@@ -303,11 +305,11 @@ async def get_discover_feed(
     sort=popular    → most total reactions first
     sort=following  → public outfits only from users you follow, newest first
     """
-    logger.info(f"Get feed — user={user_id} sort={sort}")
+    logger.info(f"Get feed — user={user_id} sort={sort} category={category}")
 
     feed_fields = (
         "outfit_id, user_id, overall_score, overall_grade, "
-        "item_ids, occasion, name, created_at, is_public"
+        "item_ids, occasion, name, created_at, is_public, category"
     )
 
     if sort == "following":
@@ -339,6 +341,10 @@ async def get_discover_feed(
         if sort == "recent":
             query = query.order("created_at", desc=True)
 
+    if category:
+        query = query.eq("category", category.value)
+
+    result = query.execute()
     result = query.execute()
     outfits = result.data or []
     total = result.count or 0
@@ -379,8 +385,8 @@ async def get_discover_feed(
         outfit["is_following_creator"] = creator_id in my_following
         outfit["is_mine"] = creator_id == str(user_id)
 
-        outfit["comment_count"] = 0   # stub — no comments feature built yet
-        outfit["share_count"] = 0     # stub — no share tracking built yet
+        outfit["comment_count"] = 0
+        outfit["share_count"] = 0
 
     if sort == "popular":
         outfits.sort(key=lambda o: o["total_reactions"], reverse=True)

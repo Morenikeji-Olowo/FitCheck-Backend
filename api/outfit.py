@@ -13,6 +13,8 @@ from shared.models.enums import OutfitOccasion
 from shared.models.planned_outfit import CreatePlannedOutfitRequest, UpdatePlannedOutfitRequest
 from datetime import date
 from shared.dependencies import get_current_user_id
+from shared.models.enums import DiscoverCategory
+
 
 
 logger = get_logger(__name__)
@@ -35,6 +37,10 @@ class SaveOutfitRequest(BaseModel):
     item_ids: list[UUID]
     occasion: OutfitOccasion = OutfitOccasion.EVERYDAY
     name: str | None = None
+    category: DiscoverCategory | None = None
+    
+class PublishOutfitRequest(BaseModel):
+    is_public: bool
 
 @router.get("/health")
 async def health():
@@ -233,6 +239,7 @@ async def save_outfit(
         "ai_confidence": ai_result["confidence"],
         "occasion": body.occasion.value,
         "name": body.name,
+        "category": body.category.value if body.category else None,
     }
 
     result = supabase.table("outfits").insert(data).execute()
@@ -359,6 +366,34 @@ async def get_planned_outfits(
 
     return SuccessResponse(data={"planned_outfits": result.data})
 
+
+
+@router.patch("/{outfit_id}/publish", response_model=SuccessResponse)
+async def toggle_outfit_publish(
+    outfit_id: UUID,
+    body: PublishOutfitRequest,
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """Publish or unpublish an outfit to the public Discover feed."""
+    logger.info(
+        f"Toggle outfit publish — outfit={outfit_id} user={user_id} is_public={body.is_public}"
+    )
+
+    result = supabase.table("outfits")\
+        .update({"is_public": body.is_public})\
+        .eq("outfit_id", str(outfit_id))\
+        .eq("user_id", str(user_id))\
+        .execute()
+
+    if not result.data:
+        raise FitCheckException(
+            "Outfit not found.", code="OUTFIT_NOT_FOUND", status_code=404
+        )
+
+    return SuccessResponse(data={
+        "outfit_id": str(outfit_id),
+        "is_public": result.data[0]["is_public"]
+    })
 
 @router.patch("/planner/{planned_id}", response_model=SuccessResponse)
 async def update_planned_outfit(
